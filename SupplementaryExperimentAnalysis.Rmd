@@ -1,0 +1,567 @@
+---
+title: 'Supplementary Material: Experiment S1'
+author: "Kate Nussenbaum"
+date: "11/20/18"
+output:
+  html_document:
+    df_print: paged
+    theme: flatly
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+}
+h2 { /* Header 2 */
+    font-size: 22px;
+}
+h3 { /* Header 3 */
+  font-size: 18px;
+}
+
+</style>
+
+
+```{r, setup, include = FALSE}
+knitr:: opts_chunk$set(cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE)
+knitr:: opts_chunk$set(out.width='500px', out.height = '300px', dpi=1000, fig.align='center')
+```
+
+```{r libraries and paths}
+## SECTION 0: Set everything up
+#First we will load the libraries we are going to use for our analysis.
+# Load needed libraries
+library(tidyverse)
+library(magrittr)
+library(pander)
+library(readxl)
+library(afex)
+library(sjPlot)
+library(sjmisc)
+library(lmSupport)
+
+#Set path to data
+dataFolder <- "supplement_data/"
+
+```
+
+```{r create ggplot theme}
+#create standard themes to use for ggplot
+kate.theme <- theme(panel.background = element_rect(fill='transparent'),
+                        axis.line = element_line(color='black'),
+                        panel.grid.minor = element_line(color='transparent'),
+                        axis.title.x = element_text(size=14, vjust=-.25),
+                        axis.title.y = element_text(size=14, vjust=1),
+                        axis.text.x = element_text(size=12, colour="black"),
+                        axis.text.y = element_text(size=12, colour="black"),
+                        legend.text=element_text(size=12),
+                        legend.title = element_text(size = 14),
+                        plot.title = element_text(size=16, face = "bold", hjust = .5))
+
+
+#Define 3 theme colors to use
+color1 = "#78C2C3"
+color2 = "#3F6699"
+color3 = "#0D1B4C"
+```
+
+```{r scale function}
+#define new function so that scale returns a vector, not a matrix
+scale_this <- function(x) as.vector(scale(x))
+```
+
+```{r import data}
+## IMPORT SUBJECT INFORMATION ##
+
+# Read in file that contains the subject information
+subInfo <- read_excel(paste(dataFolder,"subInformation_S1.xlsx", sep= ""), sheet = 1)
+subInfo <- data.frame(subInfo)   
+
+#Change ID and strategy variables from integers to factors
+subInfo$ID <- as.factor(subInfo$ID)
+subInfo$GeneratedStrategy<- as.factor(subInfo$GeneratedStrategy)
+  #Note: Level 1 of strategy variables now corresponds to "1" - the subject DID generate  the strategy
+  # Level 2 of strategy variables correspond to "0" - the subject DID NOT generate the strategy
+
+## IMPORT TASK DATA ##
+# Create two empty data frames
+  memDF <- data.frame() 
+  freqDF <- data.frame()
+
+##### Read in each subject's data #####
+for (i in 1:nrow(subInfo)) {
+   
+    #define names of files
+    sub <- subInfo$ID[i]
+    freq_filename <- paste(dataFolder, paste(sub, "_freqTask.txt", sep = ""), sep = "")
+    PA_filename <- paste(dataFolder, paste(sub, "_PA.txt", sep = ""), sep = "") 
+    memGrid_filename <- paste(dataFolder, paste(sub,"_memTestFoodGrid.txt", sep = ""), sep = "") 
+    memTest_filename <- paste(dataFolder, paste(sub,"_mem.txt", sep = ""), sep = "") 
+    
+    #read in files for each subject & add column with their subject numbers
+    freq_data  <- read.delim(text = gsub("\\t$", "", readLines(freq_filename)), header = FALSE) 
+    freq_data$ID <- sub
+    PA_data  <- read.delim(text = gsub("\\t$", "", readLines(PA_filename)), header = FALSE)
+    PA_data$ID <- sub
+    memGrid_data  <- read.delim(text = gsub("\\t$", "", readLines(memGrid_filename)), header = FALSE)
+    memTest_data  <- read.delim(text = gsub("\\t$", "", readLines(memTest_filename)), header = FALSE)
+    
+  # add variable names to columns, eliminate unnecessary columns, make sure all the variable types are correct
+    freq_data %<>% rename(animal = V1, freqCond = V2, freqResp = V3, freqRT = V4, freqTrial = V7) %>% select(-starts_with("V")) 
+    PA_data %<>% rename(paFood = V1, animal = V2, foodSide = V3, paResp = V4, paRT = V5, paTrial = V8) %>% select(-starts_with("V")) 
+    memGrid_data %<>% rename(paFood = V1, memGridLocation = V2)
+    memTest_data %<>% rename(animal = V1, memRT = V4, memResp = V5) %>% select(-starts_with("V"))
+
+  #add column to frequency data frame that counts the number of times the animal has appeared
+    freq_data$appearanceCount <- 1 #set the appearanceCount to 1
+    for (i in 2:nrow(freq_data)){
+      for (j in 1:(i-1)){
+        if (freq_data$animal[i] == freq_data$animal[j]){
+          freq_data$appearanceCount[i] <- freq_data$appearanceCount[i] + 1
+        }}}
+    
+  #add column to memory test data frame that counts the number of times the animal has appeared
+    memTest_data$memAppearanceCount <- 1 #set the appearanceCount to 1
+    for (i in 2:nrow(memTest_data)){
+      for (j in 1:(i-1)){
+        if (memTest_data$animal[i] == memTest_data$animal[j]){
+          memTest_data$memAppearanceCount[i] <- memTest_data$memAppearanceCount[i] + 1
+        }}}
+    
+    #merge the memory test data with the paired associates data
+    memData <-  merge(memTest_data, PA_data, by = "animal", all = TRUE)
+    
+    #add in information about where the foods were in each grid
+    memData <- merge(memData, memGrid_data, by = "paFood", all = TRUE)
+    
+    #create a new data frame that has the frequency condition for each animal by taking the average frequency (since all the frequencies for each animal will be the same, this is just like extracting a row)
+    animalFrequencies <- group_by(freq_data, animal) %>%
+    summarize(freqCond = mean(freqCond))
+    
+    #merge this with the memory data
+    memData <- merge(memData, animalFrequencies, by = "animal")
+    
+    # Now for each subject, there are two data frames: 
+    # memData: Contains all the info needed for the analysis of the PA task and the memory test 
+    # freq_data: Contains all the info needed for the analysis of the frequency task
+    
+  #### Merge all subject data together ####
+  memDF <- bind_rows(memDF, memData)
+  freqDF <- bind_rows(freqDF, freq_data)
+}
+  
+# merge data with subject info
+memDataCombined <- full_join(memDF, subInfo, by = "ID")
+freqDataCombined <- merge(freqDF, subInfo, by = "ID")
+
+#make sure all columns are the correct type
+memDataCombined %<>% mutate_at(c("animal", "paFood", "memResp", "ID", "memGridLocation", "GeneratedStrategy"), funs(as.factor(.)))
+
+freqDataCombined %<>% mutate_at(c("ID", "animal", "freqResp", "GeneratedStrategy"), funs(as.factor(.)))
+
+#restrict mem data to the first appearance of each item
+memDataAll <- memDataCombined #save a data frame with ALL memory trials
+memDataCombined <- memDataCombined[which(memDataCombined$memAppearanceCount ==1),] #create a data frame just with the memory trials of interest
+```
+
+
+```{r paired associates exclusion}
+## EXCLUDE SUBJECTS WHO PERFORMED BELOW-CHANCE (50%) ON PAIRED-ASSOCIATES TASK ##
+
+#Combine all the repeated rows that refer to the same trial in the PA task
+pa_data <- memDataCombined %>% group_by(ID, paTrial, foodSide) %>% summarize(paResp = mean(paResp, na.rm = TRUE))
+
+#convert food side to numeric
+pa_data$foodSide <- as.numeric(as.character(pa_data$foodSide))
+
+#Compute PA accuracy for each trial for each subject
+pa_data <- pa_data %>% mutate(acc = case_when(paResp - foodSide == 0 ~ 1, paResp - foodSide != 0 ~ 0))
+
+#Compute PA accuracy for each subject
+paAccData.sub <- pa_data %>% group_by(ID) %>% summarize(meanPaAcc = mean(acc)) %>% mutate(include = case_when(meanPaAcc > .66 ~ 1, meanPaAcc <.667 ~ 0))
+
+#exclude subs from subInfo, memData frame, freqData frame
+subInfo <- merge(subInfo, paAccData.sub, by = "ID", all = T)
+subInfo <- subInfo[which(subInfo$include ==1),]
+subInfo$ID <- factor(subInfo$ID)
+memDataCombined <- merge(memDataCombined, paAccData.sub, by = c("ID"), all = T)
+memDataCombined <- memDataCombined[which(memDataCombined$include == 1),]
+memDataCombined$ID <- factor(memDataCombined$ID)
+freqDataCombined <- merge(freqDataCombined, paAccData.sub, by = c("ID"), all = T)
+freqDataCombined <- freqDataCombined[which(freqDataCombined$include == 1),]
+freqDataCombined$ID <- factor(freqDataCombined$ID)
+```
+
+```{r compute structural learning index}
+## COMPUTE STRUCTURAL LEARNING INDEX ##
+#First compute frequency accuracy
+#Make a variable to specify what the response should be 
+freqDataCombined$correctResp <- ifelse(freqDataCombined$appearanceCount > 1, 1, 0)
+
+#Then compute whether the participant made the right response
+freqDataCombined$acc <- ifelse(freqDataCombined$freqResp == freqDataCombined$correctResp, 1, 0)
+
+#Get the mean RT for each subject for each appearance of the stimulus during the frequency task
+meanFreqRTs <- freqDataCombined %>%
+  group_by(ID, appearanceCount) %>% summarize(meanFreqRT = mean(freqRT, na.rm = TRUE))
+
+overallMeanFreqRT <- freqDataCombined %>%
+  group_by(ID) %>% summarize(meanFreqRT = mean(freqRT, na.rm = TRUE), sdFreqRT = sd(freqRT, na.rm = T))
+
+# compute learning index by subtracting 6RT from 2RT and dividing by mean RT, then get rid of unnecessary columns and merge learning index with the memory data frame
+temp1 <- meanFreqRTs %>% spread(appearanceCount, meanFreqRT)
+temp1 <- full_join(temp1, overallMeanFreqRT, by = "ID")
+temp1 <- temp1 %>% rename(six = '6', five = '5', four = '4', three = '3', two = '2', one = '1') %>% mutate(learningIndex = (two - six)/sdFreqRT) %>% select(-c(one, two, three, four, five, six, meanFreqRT, sdFreqRT))
+temp1$ID <- as.factor(temp1$ID)
+
+memDataCombined <- full_join(memDataCombined, temp1, by = "ID")
+```
+
+```{r compute memory benefit index}
+
+# Compute memory accuracy. NOTE: Trials in which the participant failed to respond will be coded as NA
+memDataCombined$memAcc <- ifelse(as.character(memDataCombined$memResp) == as.character(memDataCombined$memGridLocation), 1, 0)
+
+#make frequency condition grouping variable
+memDataCombined$freqCondFactor <- as.factor(memDataCombined$freqCond)
+
+#get the mean memory accuracy score for each subject for each frequency condition
+meanMemAcc <- memDataCombined %>%
+  group_by(ID, freqCondFactor) %>% summarize(meanMemAcc = mean(memAcc, na.rm = TRUE))
+
+#get the overall mean memory accuracy score
+overallMeanMemAcc<- memDataCombined %>%
+  group_by(ID) %>% summarize(meanMemAcc = mean(memAcc, na.rm = TRUE))
+
+# compute memory benefit index by subtracting 1acc from 6acc and dividing by mean acc, then get rid of unnecessary columns and merge the memory benefit index data frame with the memory data frame
+temp1 <- meanMemAcc %>% spread(freqCondFactor, meanMemAcc)
+temp1 <- full_join(temp1, overallMeanMemAcc, by = "ID")
+temp1 <- temp1 %>% rename(six = '6', three = '3', one = '1') %>% mutate(memBenefitIndex = (six - one)/meanMemAcc) %>% select(-c(one, three,  six, meanMemAcc))
+
+memDataCombined <- full_join(memDataCombined, temp1, by = "ID")
+```
+
+```{r split age groups}
+# SPLIT DAT INTO AGE GROUPS (for plotting purposes only)
+memDataCombined <- memDataCombined  %>% mutate(ageGroup = case_when(Age < 13 ~ "Child", Age > 13 & Age < 18 ~ "Adolescent", Age > 18 ~ "Adult"))
+
+freqDataCombined <- freqDataCombined %>% mutate(ageGroup = case_when(Age < 13 ~ "Child", Age > 13 & Age < 18 ~ "Adolescent", Age > 18 ~ "Adult"))
+
+#set as factors and specify factor order
+memDataCombined$ageGroup <- factor(memDataCombined$ageGroup, levels = c("Child", "Adolescent", "Adult"))
+freqDataCombined$ageGroup <- factor(freqDataCombined$ageGroup, levels = c("Child", "Adolescent", "Adult"))
+```
+
+
+# Subject statistics
+First, we will determine whether IQ correlates with age in our sample. As specified in our pre-registration, here we run run a linear regression testing the effects of age on IQ. 
+
+```{r IQ age regression and plot}
+# Run linear regression testing the effects of age on IQ
+ageIQ.lm <- lm(IQ ~ Age, data = subInfo) #run regression
+ageIQeffectSize <- modelEffectSizes(ageIQ.lm, Print = F, Digits = 3)
+ageIQsummary <-(anova(ageIQ.lm))
+ageIQsummary$pEta[1] <-ageIQeffectSize$Effects[2,3]
+ageIQsummary$pEta[2] <-NA
+pander(ageIQsummary)
+
+# Plot the correlations
+ageIQPlot <- ggplot(subInfo, aes(x = Age, y = IQ)) +
+  geom_point() +
+  stat_smooth(method = "lm", color = color2) + 
+  xlab("Age") + ylab ("IQ") +
+kate.theme
+ageIQPlot
+
+```
+This analysis indicates that there is a significant relation between age and IQ. As such, we will run all subsequent models both with and without IQ as an interacting fixed effect to better tease apart effects of age from effects of IQ.
+
+
+# Frequency task analysis
+_In this section, we will run mixed effects models to determine the effects of appearance count and age on participants' accuracy and reaction time during the frequency task. For both models, we will start with the maximal random effects structure. If the models do not converge, we will remove random slopes and intercepts as specified in the pre-registration. As we preregistered, if the maximal model does not converge, we will follow the procedure laid out in Singmann & Kellen (2017) to reach convergence. They recommend first removing correlations between random slopes and random intercepts. If models stil fail to converge, they recommend removing random-effects parameters 'starting with the highest-order random effects parameter with the lowest estimated variance._
+
+## Frequency task accuracy
+First, we will ensure that all subjects responded to >10% of repeated trials, indicating that they understood the task instructions.
+```{r divide freq accuracy data by old and new}
+#Divide frequency data into new items and old items
+freqDataRepeatedItems <- freqDataCombined[which(freqDataCombined$appearanceCount > 1),]
+freqDataNewItems <- freqDataCombined[which(freqDataCombined$appearanceCount == 1),]
+
+#compute each subjects' accuracy
+freqDataSubAcc <- freqDataRepeatedItems %>% group_by(ID) %>% summarise(meanFreqAcc = mean(acc, na.rm = TRUE)) %>% arrange(meanFreqAcc)
+
+#print data frame to ensure all subjects responded with a reasonably high degree of accuracy
+freqDataSubAcc
+
+#scale continuous variables used in models
+freqDataRepeatedItems %<>% mutate(ageScaled = scale_this(Age), appearanceCountScaled = scale_this(appearanceCount), IQScaled = scale_this(IQ))
+
+freqDataNewItems %<>% mutate(ageScaled = scale_this(Age), IQScaled = scale_this(IQ))
+```
+
+
+## Frequency accuracy mixed-effects model: New items without IQ
+```{r frequency accuracy new item model no IQ maximal}
+#Run maximal mixed effects model examining the effects of appearance count on participant accuracy
+freqAccModel.newItems.maximal <- mixed(acc ~ ageScaled + (1|ID) + (ageScaled|animal), data = freqDataNewItems, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+freqAccModel.newItems.maximal
+```
+
+## Frequency accuracy mixed-effects model: New items with IQ
+```{r frequency accuracy new item model with IQ maximal}
+#Run maximal mixed effects model examining the effects of appearance count on participant accuracy (no correlations)
+freqAccModel.IQ.newItems.maximal <- mixed(acc ~ ageScaled * IQScaled + (1|ID) + (ageScaled *IQScaled|animal), data = freqDataNewItems, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+freqAccModel.IQ.newItems.maximal
+```
+
+
+## Frequency accuracy: Repeated items without IQ
+```{r frequency accuracy old item model no IQ}
+#Run maximal mixed effects model examining the effects of appearance count on participant accuracy
+freqAccModel.oldItems <- mixed(acc ~ ageScaled *appearanceCountScaled + (appearanceCountScaled|ID) + (ageScaled*appearanceCountScaled|animal), data = freqDataRepeatedItems, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+freqAccModel.oldItems
+```
+
+## Frequency accuracy: Repeated items with IQ
+```{r frequency accuracy old item model with IQ}
+#Run maximal mixed effects model examining the effects of appearance count on participant accuracy
+freqAccModel.IQ.oldItems <- mixed(acc ~ ageScaled * IQScaled *appearanceCountScaled + (appearanceCountScaled|ID) + (ageScaled *IQScaled*appearanceCountScaled|animal), data = freqDataRepeatedItems, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+freqAccModel.IQ.oldItems
+```
+
+
+## Frequency accuracy: Plot
+```{r frequency accuracy effects plots}
+#first compute means of each condition
+freqAccMeans <- freqDataRepeatedItems %>% group_by(appearanceCount, ageGroup) %>% summarize(meanFreqAcc = mean(acc), sdFreqAcc = sd(acc), N = n(), seFreqAcc = sdFreqAcc/sqrt(N), min = meanFreqAcc - seFreqAcc, max = meanFreqAcc + seFreqAcc)
+
+freqAccPlot.age <- ggplot(freqAccMeans, aes(x = appearanceCount, y = meanFreqAcc, fill = ageGroup)) +
+  geom_point(stat = "identity", aes(color = ageGroup), size = 2, show.legend = F) +
+  geom_line(stat = "identity", aes(color = ageGroup), size = 1.5) +
+  geom_errorbar(data = freqAccMeans, aes(x = appearanceCount, ymin = min, ymax = max, color = ageGroup), width = .2, stat = "identity") +
+  coord_cartesian(ylim = c(.85, 1)) + 
+  xlab("Appearance Count") +
+  ylab("Proportion Correct") +
+  scale_color_manual(values=c(color1, color2, color3)) +
+  ggtitle("Frequency Task Accuracy") + 
+  guides(color = guide_legend(title = "Age Group")) + 
+  kate.theme
+freqAccPlot.age 
+```
+
+## Frequency task reaction times: Repeated items without IQ
+```{r freq RT data processing}
+#first, create new data frame with correct trials only, as was specified in the pre-registration
+freqRTdata <- freqDataRepeatedItems[which(freqDataRepeatedItems$acc == 1),]
+
+#rescale age, appearance count and IQ
+freqRTdata$ageScaled <- scale_this(freqRTdata$Age)
+freqRTdata$appearanceCountScaled <- scale_this(freqRTdata$appearanceCount)
+freqRTdata$IQScaled <- scale_this(freqRTdata$IQ)
+```
+
+```{r freq RT mixed model no IQ}
+#Run maximal mixed effects model examining the effects of appearance count on participant RT
+freqRTModel <- mixed(freqRT ~ appearanceCountScaled*ageScaled + (appearanceCountScaled|ID) + (appearanceCountScaled*ageScaled|animal), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+freqRTModel
+```
+
+## Frequency task reaction times: Repeated items with IQ
+```{r freq RT mixed model}
+#Run maximal mixed effects model examining the effects of appearance count on participant RT
+freqRTModel.IQ <- mixed(freqRT ~ appearanceCountScaled*ageScaled*IQScaled + (appearanceCountScaled|ID) + (appearanceCountScaled*ageScaled*IQScaled|animal), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+freqRTModel.IQ
+```
+
+## Frequency task reaction times: Plot
+```{r frequency RT effects plots}
+#first compute means of each condition
+freqRTMeans <- freqRTdata %>% group_by(appearanceCount, ageGroup) %>% summarize(meanFreqRT = mean(freqRT), sdFreqRT = sd(freqRT), N = n(), seFreqRT = sdFreqRT/sqrt(N), min = meanFreqRT - seFreqRT, max = meanFreqRT + seFreqRT)
+
+freqRTPlot.age <- ggplot(freqRTMeans, aes(x = appearanceCount, y = meanFreqRT, fill = ageGroup)) +
+  geom_line(stat = "identity", aes(color = ageGroup), size = 1.5) +
+  geom_point(stat = "identity", aes(color = ageGroup), size = 2, show.legend = F) +
+  geom_errorbar(data = freqRTMeans, aes(x = appearanceCount, ymin = min, ymax = max, color = ageGroup), width = .2, stat = "identity") +
+  coord_cartesian(ylim = c(.5, 1)) + 
+  xlab("Appearance Count") +
+  ylab("RT (seconds)") +
+  scale_color_manual(values=c(color1, color2, color3)) +
+  ggtitle("Frequency Task Reaction Times") + 
+  guides(color = guide_legend(title = "Age Group")) + 
+  kate.theme
+freqRTPlot.age 
+```
+
+
+#Memory test analysis
+
+_In this section, we will run four mixed effects models to examine the effects of frequency condition on memory accuracy (both with and without IQ included). We will deviate from our pre-registration by only analyzing the data from the first appearance of each item during the memory test (the first 30 trials). We will follow the same procedure as with our frequency data to find the maximal random effects structure that converges._
+
+## Memory accuracy without IQ
+
+```{r memory acc data processing, echo = F}
+
+#rescale age, frequency and IQ
+memDataCombined$ageScaled <- scale_this(memDataCombined$Age)
+memDataCombined$freqCondScaled <- scale_this(memDataCombined$freqCond)
+memDataCombined$IQScaled <- scale_this(memDataCombined$IQ)
+```
+
+```{r memory acc first appearance model, eval = F}
+#maximal model
+memAccModel <- mixed(memAcc ~ freqCondScaled * ageScaled  + (freqCondScaled|ID) + (freqCondScaled*ageScaled|animal), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+memAccModel
+
+#THIS MODEL PRODUCES CONVERGENCE ERRORS
+```
+
+```{r memory acc first appearance no correlations}
+#Remove correlations between random slopes and intercepts
+memAccModel.2 <- mixed(memAcc ~ freqCondScaled * ageScaled   + (freqCondScaled||ID) + (freqCondScaled*ageScaled||animal), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)), expand_re = TRUE)
+
+memAccModel.2
+```
+
+## Memory accuracy with IQ
+
+```{r memory acc maximal model w/IQ, eval = F}
+#memory accuracy model including IQ
+memAccModel.IQ <- mixed(memAcc ~ freqCondScaled * ageScaled * IQScaled  + (freqCondScaled|ID) + (freqCondScaled*ageScaled*IQScaled|animal), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)))
+
+memAccModel.IQ
+#THIS MODEL PRODUCES CONVERGENCE ERRORS
+```
+
+```{r memory acc model w/IQ no correlations}
+# remove correlations between random slopes and intercepts
+memAccModel.IQ.2 <- mixed(memAcc ~ freqCondScaled * ageScaled * IQScaled  + (freqCondScaled||ID) + (freqCondScaled*ageScaled*IQScaled||animal), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e6)), expand_re = TRUE)
+
+memAccModel.IQ.2 
+```
+
+
+```{r memory accuracy plots}
+#first compute means of each condition
+memAccMeans <- memDataCombined %>% group_by(freqCondFactor, ageGroup) %>% summarize(meanMemAcc = mean(memAcc, na.rm = TRUE), sdMemAcc = sd(memAcc, na.rm = TRUE), N = n(), seMemAcc = sdMemAcc/sqrt(N), min = meanMemAcc - seMemAcc, max = meanMemAcc + seMemAcc)
+
+#first 30 trials only accuracy plot
+memAccPlot <- ggplot(memAccMeans, aes(x = ageGroup, y = meanMemAcc, fill = freqCondFactor)) +
+  geom_bar(stat = "identity", position = position_dodge(width = .9)) +
+  geom_errorbar(data = memAccMeans, aes(x = ageGroup, ymin = min, ymax = max), position = position_dodge(width = .9), width = .2, stat = "identity") +
+  coord_cartesian(ylim = c(0, .5)) + 
+  xlab("Age Group") +
+  ylab("Proportion Correct") +
+  scale_fill_manual(values=c(color1, color2, color3)) +
+  guides(fill = guide_legend(title = "Frequency Condition")) + 
+  ggtitle("\n\nMemory Accuracy") +
+  kate.theme
+memAccPlot
+```
+
+
+# Relationship between structural learning and memory encoding
+_As specified, we will now run a regression examining the effects of structural learning index on memory benefit score, to determine if participants who showed the most evidence of learning the animal frequencies also demonstrated the greatest effect of frequency condition on encoding._
+
+```{r learning memory relationship}
+#first, extract one line per subject
+learnMemData <- memDataCombined %>% group_by(ID, IQ, Age, ageGroup) %>% summarize(learningIndex = mean(learningIndex, na.rm = TRUE), memBenefitIndex = mean(memBenefitIndex, na.rm = TRUE))
+
+#scale Age, IQ, learning index
+learnMemData$IQScaled <- scale_this(learnMemData$IQ)
+learnMemData$ageScaled <- scale_this(learnMemData$Age)
+learnMemData$learningIndexScaled <- scale_this(learnMemData$learningIndex)
+```
+
+## Structural learning model without IQ
+```{r learning memory no IQ}
+#run model without IQ
+learnMem.lm <- lm(memBenefitIndex ~ ageScaled * learningIndexScaled, data = learnMemData)
+pander(summary(learnMem.lm))
+```
+
+## Structural learning model with IQ
+```{r learning memory with IQ}
+#run model with IQ
+learnMem.IQ.lm <- lm(memBenefitIndex ~ ageScaled * IQScaled * learningIndexScaled, data = learnMemData)
+pander(summary(learnMem.IQ.lm))
+```
+
+## Plot: Correlation between frequency learning and memory
+```{r learning memory plot}
+# Plot the correlations
+learnMemPlot <- ggplot(learnMemData, aes(x =learningIndex, y = memBenefitIndex)) +
+  geom_point() +
+  stat_smooth(method = "lm", color = color2) + 
+  xlab("Structural Learning Index") + ylab ("Memory Benefit Index") +
+kate.theme
+learnMemPlot
+```
+
+
+## Plot: Interaction between age and IQ on memory benefit score
+```{r age IQ mem benefit plot}
+# Plot age and IQ relation
+learnMemPlot2 <- ggplot(learnMemData, aes(x =IQ, y = memBenefitIndex, color = ageGroup, fill = ageGroup)) +
+  geom_point() +
+  geom_smooth(method = "lm", alpha = .1) + 
+  scale_color_manual(values = c(color1, color2, color3), name = "Age Group") + 
+  scale_fill_manual(values = c(color1, color2, color3), name = "Age Group") +
+  xlab("IQ") + ylab ("Memory Benefit Index") +
+kate.theme
+learnMemPlot2
+```
+
+# Relationship between strategy use and memory encoding
+_Finally, we will run a regression examining the effects of strategy use on memory benefit score. We will model the effect of subject strategy recognition (a 2-level categorical variable based on participant’s response (yes/no) to our question of whether they recognized that focusing on the more-frequent animals would be a good strategy) and age on their memory benefit score._
+
+```{r strategy memory relationship}
+#create data frame that has 1 row for each subject with age, ageGroup, IQ, mem benefit score, and strategy use
+stratMemData <- memDataCombined %>% select(-c(animal, paFood, memRT, memResp, memAppearanceCount, foodSide, paResp, paRT, paTrial, memGridLocation, freqCond, Vocab, MR, meanPaAcc, include, learningIndex, memAcc, freqCondFactor, ageScaled, freqCondScaled))
+
+#find unique rows
+stratMemData <- unique(stratMemData)
+
+#scale age and IQ
+stratMemData$IQScaled <- scale_this(stratMemData$IQ)
+stratMemData$ageScaled <- scale_this(stratMemData$Age)
+```
+
+## Strategy use regression without IQ
+```{r strategy use without IQ}
+#run regression without IQ
+stratMem.lm <- lm(memBenefitIndex ~ ageScaled * GeneratedStrategy, data = stratMemData)
+pander(summary(stratMem.lm))
+
+```
+
+## Strategy use regression with IQ
+```{r strategy use with IQ}
+#run regression with IQ
+stratMem.IQ.lm <- lm(memBenefitIndex ~ ageScaled * IQScaled * GeneratedStrategy, data = stratMemData)
+pander(summary(stratMem.IQ.lm))
+```
+
+## Strategy use by age group
+```{r strategy use by age group}
+#look at mean strategy use per age group
+stratSummaryData <- stratMemData %>% group_by(ageGroup) %>% summarise(meanStratUse = mean(as.numeric(as.character(GeneratedStrategy))))
+
+pander(stratSummaryData)
+```
