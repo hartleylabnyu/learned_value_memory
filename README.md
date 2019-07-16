@@ -6,4 +6,4 @@ Preprint: https://psyarxiv.com/xbmyn/
 
 OSF Project Page: https://osf.io/h9ncs/
 
-For questions, email katenuss@nyu.edu
+For questions, email katenuss@nyu.edu.
