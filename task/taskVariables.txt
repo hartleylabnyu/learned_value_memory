@@ -1,0 +1,40 @@
+1. Frequency Task (subNumber_freqTask1.txt for block1, subNumber_freqTask2.txt for block2)
+Column 1: image
+Column 2: frequency condition (1 or 5)
+Column 3: response (0 if no button press, 1 if button press)
+Column 4: reaction time (seconds from image onset to button press)
+Column 5: stim onset time
+Column 6: stim offset time (should be ~2 seconds after onset)
+Column 7: trial number
+
+2. Paired Associates Task (subNumber_PA1.txt for block 1, subNumber_PA2.txt for block 2)
+Column 1: paired associate image
+Column 2: image
+Column 3: side of screen with paired associate (1 for left, 2 for right)
+Column 4: response (participant supposed to indicate side of screen where paired associate is - 1 for left, 2 for right)
+Column 5: reaction time (seconds between image onset and button press)
+Column 6: stim onset time
+Column 7: stim offset time (should be ~5 seconds after onset)
+Column 8: trial number
+
+3. Memory Test Frequency Reports (subNumber_mem1_freqReports.txt for block 1, _mem2_ for block2)
+Column 1: image
+Column 2: x location of mouse click 
+Column 3: y location of mouse click
+Column 4: reaction time (seconds)
+Column 5: reported frequency (square clicked)
+Column 6: stim onset time
+Column 7: stim offset time
+
+4. Memory Test (subNumber_mem1.txt for block 1, _mem2. for block 2)
+Column 1: image
+Column 2: x location of mouse click 
+Column 3: y location of mouse click
+Column 4: reaction time (seconds)
+Column 5: grid number clicked
+Column 6: stim onset time
+Column 7: stim offset time
+
+5. Memory Test Grid (subNumber_memTestGrid1.txt for block 1, Grid2 for block2)
+Column 1: paired associate
+Column 2: location in memory test grid
