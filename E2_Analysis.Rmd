@@ -1,0 +1,1381 @@
+---
+title: "Memory's reflection of learned information value increases across development: Experiment 2 analyses"
+author: "Kate Nussenbaum (katenuss@nyu.edu)"
+date: "7/18/19"
+output:
+  html_document:
+    df_print: paged
+    theme: flatly
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+---
+
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+}
+h2 { /* Header 2 */
+    font-size: 22px;
+}
+h3 { /* Header 3 */
+  font-size: 18px;
+}
+
+</style>
+
+
+
+```{r setup, include = F}
+knitr:: opts_chunk$set(cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(out.width='600px', out.height = '300px', dpi=1000, fig.align='center')
+```
+
+```{r libraries and paths}
+## SECTION 0: Set everything up
+
+# Load needed libraries
+library(tidyverse)
+library(magrittr)
+library(afex)
+library(glue)
+library(readxl)
+library(lmSupport)
+library(pander)
+library(sjPlot)
+library(optimx)
+
+#label data folders
+dataFolder <- "E2_anonymized_data/" #Experiment 2 data
+exp1DataFolder = "E1_anonymized_data/" #Experiment 1 data
+
+```
+
+```{r create ggplot theme}
+#create standard theme to use for ggplot
+kate.theme <- theme(panel.background = element_rect(fill='transparent'),
+                        panel.grid.minor = element_line(color='transparent'),
+                        axis.title.x = element_text(size=16, vjust=-.25),
+                        axis.title.y = element_text(size=16, vjust=1, margin = margin(r = 10)),
+                        axis.text.x = element_text(size=12, colour="black"),
+                        axis.text.y = element_text(size=12, colour="black"),
+                        panel.spacing.x = unit(1, "lines"),
+                        panel.border = element_rect(colour = "black", fill=NA, size=1),
+                        legend.key=element_blank(),
+                        legend.text=element_text(size=12),
+                        legend.title = element_text(size = 14),
+                        plot.title = element_text(size=16, face = "bold", hjust = .5), 
+                        strip.text.x = element_text(size=12), 
+                        strip.text.y = element_text(size=12, face="bold"), 
+                        strip.background = element_rect(colour= "black", fill = "transparent"))
+
+
+#Define 3 theme colors to use
+color1 = "#78C2C3"
+color2 = "#3F6699"
+color3 = "#0D1B4C"
+```
+
+```{r scale function}
+#define new function so that scale returns a vector, not a matrix
+scale_this <- function(x) as.vector(scale(x))
+```
+
+```{r import task data}
+# READ IN TASK DATA #
+
+#identify relevant data files
+freqfiles = list.files(dataFolder, pattern = "freqTask")
+PAfiles = list.files(dataFolder, pattern = "PA")
+memTestFiles = list.files(dataFolder, pattern = "mem..txt")
+memTestGridFiles = list.files(dataFolder, pattern = "Grid")
+freqReports= list.files(dataFolder, pattern = "freqReports")
+
+#frequency data
+freqData <- tibble(filename = freqfiles) %>%
+  mutate(file_contents = map(filename, ~ read_tsv(file.path(dataFolder, .), col_names = c("item", "freqCond", "freqResp", "freqRT", "X5", "X6", "freqTrial")))) %>%
+  separate(filename, into = c("filename", "block"), sep = "k") %>%
+  separate(block, into = c("block", "junk"), sep = ".txt") %>%
+  separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+  unnest() %>%
+  select(-matches("X")) %>%
+  group_by(sub, item, block) %>% 
+  mutate(stimNum = 1, freqAppearanceCount = cumsum(stimNum))  #add appearance count
+
+#paired associates data
+paData <- tibble(filename = PAfiles) %>%
+  mutate(file_contents = map(filename, ~ read_tsv(file.path(dataFolder, .), col_names = c("paAssociate", "item", "associateSide", "paResp", "paRT", "X6", "X7", "paTrial" )))) %>%
+  separate(filename, into = c("filename", "block"), sep = "PA") %>%
+  separate(block, into = c("block", "junk"), sep = ".txt") %>%
+  separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+  unnest() %>%
+  select(-matches("X"))
+
+#memory test data
+memData <- tibble(filename = memTestFiles) %>%
+    mutate(file_contents = map(filename, ~ read_tsv(file.path(dataFolder, .), col_names = c("item", "X2", "X3", "memRT", "memResp", "X6", "X7")))) %>%
+    separate(filename, into = c("filename", "block"), sep = "mem") %>%
+    separate(block, into = c("block", "junk"), sep = ".txt") %>%
+    separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+    unnest() %>%
+  select(-matches("X"))
+
+#memory test grids
+memGrids <- tibble(filename = memTestGridFiles) %>%
+    mutate(file_contents = map(filename, ~ read_tsv(file.path(dataFolder, .), col_names = c("paAssociate", "gridLocation")))) %>%
+    separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename")) %>%
+    unnest()
+
+#frequency reports data
+freqReportsData <- tibble(filename = freqReports) %>%
+    mutate(file_contents = map(filename, ~ read_tsv(file.path(dataFolder, .), col_names = c("item", "X2", "X3", "freqReportRT", "memFreqResp", "X6", "X7")))) %>%
+    separate(filename, into = c("filename", "block"), sep = "mem") %>%
+    separate(block, into = c("block", "junk"), sep = "_freqReports.txt") %>%
+    separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+    unnest() %>%
+  select(-matches("X"))
+       
+#get mean and sd of frequency reports for each subject for each block
+freqRespSubMeans <- freqReportsData %>%
+  group_by(sub, block) %>%
+  summarize(meanFreqResp = mean(memFreqResp), sdFreqResp = sd(memFreqResp))
+
+#join with freqReports data and compute z score
+freqReportsData <- full_join(freqReportsData, freqRespSubMeans, by = c("sub", "block")) %>%
+  mutate(freqRespZ = (memFreqResp - meanFreqResp)/sdFreqResp)
+
+#join memory data and pa data
+memData <- full_join(memData, paData, by = c("sub", "item", "block"))
+
+#join memory data and memory grid data
+memData <- full_join(memData, memGrids, by = c("sub", "paAssociate"))
+
+#join memory data and frequency reports
+memData <- full_join(memData, freqReportsData, by = c("sub", "block", "item"))
+
+#compute frequencies for each item for each subject
+frequencies <-freqData %>% 
+  group_by(sub, block, item) %>% 
+  summarise(freqCond = mean(freqCond))
+  
+#join frequency condition with memory data
+memData <- full_join(memData, frequencies, by = c("sub", "block", "item"))
+
+#remove rows from memDat which just have memory test lures
+memData %<>%
+  filter(!is.na(item))
+
+#Now we have two dataframes with all of our task data: memData and freqData
+```
+
+```{r import subject information}
+#read in excel sheet with subject information
+subInfo <- read_excel(glue("{dataFolder}/E2subInfo.xlsx"))  %>%
+  mutate_at(.vars = vars(sub), .fun = as.character)
+
+#Join subject info into mem data frame and freq data frame
+memData <- full_join(memData, subInfo, by = "sub")
+freqData <- full_join(freqData, subInfo, by = "sub") 
+```
+
+
+```{r paired associates exclusion}
+## Identify and exclude subjects who performed below chance (50%) on paired associates task ##
+
+#Compute PA accuracy for each trial for each subject
+paData %<>% 
+  mutate(acc = case_when(paResp - associateSide == 0 ~ 1, paResp - associateSide != 0 ~ 0))
+
+#Compute PA accuracy for each subject for each block - have to respond correctly 75% of the time or more to be statistically above chance
+paAccData.subBlocks <- paData %>% 
+  group_by(sub, block) %>% 
+  summarize(meanPaAcc = mean(acc)) %>% 
+  mutate(include = case_when(meanPaAcc > .74 ~ 1, meanPaAcc <.75 ~ 0))
+
+#Spread include so that there is an include1 and include2 columns and identify subjects who should be excluded from either block
+paAccData.sub <- paAccData.subBlocks %>% 
+  select(-meanPaAcc) %>% 
+  spread(block, include) %>% 
+  rename(include1 = `1`, include2 = `2`) %>% 
+  mutate(include = case_when(include1 + include2 == 2 ~ 1, include1 + include2 < 2 ~0)) %>% select(-c(include1, include2))
+
+#identify the sub ID of the excluded subs
+excludedSubs <- paAccData.sub %>%
+  filter(include == 0)
+excludedSubIDs = excludedSubs$sub
+
+#Remove excluded subs from paData, subInfo, memData, freqData
+subInfo %<>% filter(sub != excludedSubIDs)
+memData %<>% filter(sub != excludedSubIDs)
+freqData %<>% filter(sub != excludedSubIDs)
+
+#compute mean and sd of included subs
+paStats <- paAccData.subBlocks %>% 
+  group_by(include) %>%
+  summarize(grandMeanPaAcc = mean(meanPaAcc), sdPaAcc = sd(meanPaAcc), minPaAcc = min(meanPaAcc))
+
+```
+
+# Subject statistics
+```{r sub stats}
+# get mean and sd age
+subStats <- subInfo %>% 
+  summarise(meanAge = mean(age), sdAge = sd(age), minAge = min(age), maxAge = max(age), n = n(), numFemales = sum(gender))
+
+pander(subStats)
+```
+
+# Confirmatory analyses: Experiment 2
+## Frequency-learning task 
+### Frequency task accuracy
+```{r compute frequency task accuracy}
+#compute accuracy for each trial
+freqData %<>% 
+  mutate(freqAcc = case_when(freqResp == 0 & freqAppearanceCount == 1 ~ 1, freqResp == 0 & freqAppearanceCount > 1 ~ 0, freqResp == 1 & freqAppearanceCount > 1 ~ 1, freqResp == 1 & freqAppearanceCount == 1 ~ 0))
+
+#split data based on whether it was the first presentation or repeated presentation
+freqDataFirst <- freqData %>%
+  filter(freqAppearanceCount == 1)
+
+freqDataRepeated <- freqData %>%
+  filter(freqAppearanceCount >1)
+
+#for repeated presentation, compute mean accuracy in frequency task for each subject
+freqDataSubBlockMeans <- freqDataRepeated %>% 
+  group_by(sub, block, age) %>% 
+  summarise(N = n(), meanSubAcc = mean(freqAcc, na.rm = TRUE)) %>% 
+  arrange(meanSubAcc) %>%
+  mutate(badFreqSub = case_when(meanSubAcc < .10 ~ 1, meanSubAcc > .10 ~ 0))
+
+#display table of means
+freqDataSubBlockMeans %>% arrange(meanSubAcc)
+
+#merge data frames
+freqAccData <- merge(freqData, freqDataSubBlockMeans, by = c("sub", "block", "age"), all = TRUE)
+
+#remove subjects who performed poorly in the frequency task
+freqAccDataFiltered <- freqAccData %>%
+  filter(meanSubAcc > .10) %>%
+  droplevels()
+```
+
+
+```{r first appearance count freq acc display means and process data}
+#set block, subject, item as factors
+freqAccDataFiltered$sub <- as.factor(freqAccDataFiltered$sub)
+freqAccDataFiltered$item <- as.factor(freqAccDataFiltered$item)
+freqAccDataFiltered$block <- as.factor(freqAccDataFiltered$block)
+
+#re-split based on first vs. repeated appearance
+freqDataFirst <- freqAccDataFiltered %>%
+  filter(freqAppearanceCount == 1)
+  
+freqDataRepeated <- freqAccDataFiltered %>%
+  filter(freqAppearanceCount > 1)
+
+#compute mean and sd
+freqAccFirstStats <- freqDataFirst %>%
+  summarize(meanAcc = mean(freqAcc), sdAcc = sd(freqAcc))
+pander(freqAccFirstStats)
+
+#compute mean and sd
+freqAccRepeatedStats <- freqDataRepeated %>%
+  summarize(meanAcc = mean(freqAcc), sdAcc = sd(freqAcc))
+pander(freqAccRepeatedStats)
+```
+
+
+#### Frequency accuracy mixed-effects model: New items
+```{r first appearance count freq acc maximal model, eval = F}
+freqFirstAppearanceAcc.maximal <- mixed(freqAcc ~ block + (block|sub) + (block|item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r first appearance count freq acc model 2}
+#remove correlations and try again
+freqFirstAppearanceAcc.2 <- mixed(freqAcc ~ block + (block||sub) + (block||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re =T)
+
+#display mixed output
+freqFirstAppearanceAcc.2
+
+
+#return glmer output
+freqFirstAppearanceAcc.2.glmer <- mixed(freqAcc ~ block + (block||sub) + (block||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re =T, return = "merMod")
+
+#display glmer output
+summary(freqFirstAppearanceAcc.2.glmer)
+```
+
+
+#### Frequency accuracy mixed-effects model: Repeated items
+```{r first appearance count freq acc scale variables}
+freqDataRepeated$appearanceCountScaled <- scale_this(freqDataRepeated$freqAppearanceCount)
+```
+
+```{r freq acc maximal model}
+freqAcc.maximal <- mixed(freqAcc ~  block * appearanceCountScaled + (block* appearanceCountScaled|sub) + (block * appearanceCountScaled|item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+freqAcc.maximal 
+
+#return glmer output
+freqAcc.maximal.glmer <- mixed(freqAcc ~  block * appearanceCountScaled + (block* appearanceCountScaled|sub) + (block * appearanceCountScaled|item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
+
+summary(freqAcc.maximal.glmer)
+```
+
+
+### Frequency task reaction times:
+#### Frequency reaction times mixed-effects model: Repeated items
+```{r frequency task RT data processing}
+#Filter out inaccurate trials
+freqRTdata <-freqDataRepeated %>%
+  filter(freqAcc == 1)
+
+#Scale appearance count
+freqRTdata$appearanceCountScaled <- scale_this(freqRTdata$freqAppearanceCount)
+```
+
+```{r frequency task RT maximal model}
+freqRT.maximal <- mixed(freqRT ~  appearanceCountScaled * block + (appearanceCountScaled * block|sub) + (appearanceCountScaled * block|item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+freqRT.maximal
+
+#return lmer results
+freqRT.maximal.lmer <- mixed(freqRT ~  appearanceCountScaled * block + (appearanceCountScaled * block|sub) + (appearanceCountScaled * block|item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
+
+summary(freqRT.maximal.lmer)
+```
+
+#### Plot: Frequency task reaction times
+```{r freqRT interaction plot}
+freqRTPlotData <- freqRTdata %>% 
+  group_by(freqAppearanceCount, block) %>% 
+  summarise(meanFreqRT = mean(freqRT, na.rm = T), sdFreqRT = sd(freqRT, na.rm = T), N = n(), seRT = sdFreqRT/sqrt(N))
+
+#compute error bar limits
+errorBars <- aes(ymax = meanFreqRT + seRT, ymin = meanFreqRT - seRT)
+
+#make plot
+freqRTPlot <- ggplot(freqRTPlotData, aes(x = freqAppearanceCount, y = meanFreqRT, fill = block)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c(color1, color3)) +
+  geom_errorbar(errorBars, position = position_dodge(width = .9), width = .1) +
+  xlab("Appearance Count") +
+  ylab("Frequency Task Reaction Times (s)") +
+  ggtitle("Frequency Task Reaction Times") + 
+  kate.theme
+freqRTPlot
+```
+
+
+## Explicit frequency reports
+```{r compute freq response error}
+#compute response error and response error magnitude
+memData %<>% 
+  mutate(memFreqRespError = memFreqResp - as.numeric(as.character(freqCond)), memFreqRespErrorMagnitude = abs(memFreqRespError))
+
+#code frequency condition as a factor
+memData$freqCondFactor <- as.factor(memData$freqCond)
+```
+
+### Explicit frequency reports mixed-effects model
+```{r explicit freq error maximal model}
+freqError.maximal <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *block + (freqCondFactor*block|sub) + (freqCondFactor|item), data = memData, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+freqError.maximal
+
+#return lmer results
+
+freqError.maximal.lmer <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *block + (freqCondFactor*block|sub) + (freqCondFactor|item), data = memData, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
+
+summary(freqError.maximal.lmer)
+```
+
+```{r explicit freq error stats}
+#examine means to underestand interaction
+freqErrorMeans <- memData %>%
+  group_by(block, freqCondFactor) %>%
+  summarize(meanError = mean(memFreqRespErrorMagnitude))
+pander(freqErrorMeans)
+```
+
+
+### Plot: Frequency report distributions
+```{r frequency histograms}
+#plot histogram of frequency responses as a function of frequency
+meanFreqResp <- memData %>% 
+  group_by(freqCond) %>% 
+  summarise(meanFreqResp = mean(memFreqResp, na.rm = TRUE))
+
+#make plot
+freqRespHist <- ggplot(memData, aes(x = (memFreqResp), color = freqCondFactor, fill = freqCondFactor)) +
+  stat_count(position = "identity", alpha = .5) +
+  scale_fill_manual(values = c(color1, color3), name = "Frequency Condition") +
+  scale_color_manual(values = c(color1, color3), name = "Frequency Condition") + 
+  xlab("Reported Frequency") +
+  ylab("Number of Responses") +
+   scale_x_discrete(limits = c(1:10)) +
+  ggtitle("Adults") +
+  geom_vline(xintercept = meanFreqResp$meanFreqResp, color = c(color1, color3), size = 1, linetype = "dashed") + 
+  kate.theme 
+freqRespHist
+```
+
+
+## Memory accuracy
+```{r compute memory accuracy}
+#compute memory accuracy for each trial
+memData %<>%
+  mutate(memAcc = case_when(as.character(memResp) == as.character(gridLocation) ~ 1, as.character(memResp) != as.character(gridLocation) ~ 0))
+      
+#make block a factor
+memData$block <- as.factor(memData$block)
+```
+
+### Memory accuracy mixed-effects model
+```{r memory accuracy maximal model, eval = F}
+memAcc.maximal <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block|sub) + (freqCondFactor*block|item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r memory accuracy model 2}
+#remove correlations
+memAcc.2 <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block||sub) + (freqCondFactor*block||item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
+
+memAcc.2
+
+#return glmer results
+
+memAcc.2.glmer <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block||sub) + (freqCondFactor*block||item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
+
+summary(memAcc.2.glmer)
+```
+
+### Plot: Effects of frequency condition and block on memory
+```{r memory accuracy plot, fig.width = 10, fig.height = 6}
+memPlotData <- memData %>% 
+  group_by(freqCondFactor, block) %>% 
+  summarise(meanAcc = mean(memAcc, na.rm = T), sdAcc = sd(memAcc, na.rm = T), N = n(), seAcc = sdAcc/sqrt(N))
+
+#compute error bar limits
+errorBars <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+memAccPlot <- ggplot(memPlotData, aes(x = block, fill = freqCondFactor, y = meanAcc)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_errorbar(errorBars, position = position_dodge(width = .9), width = .1) +
+  #facet_wrap(~ageGroup) +
+  coord_cartesian(ylim = c(0, .75)) +
+  xlab("Experiment Block") +
+  ylab("Memory Accuracy") +
+  scale_fill_manual(values = c(color1, color3), name = "Frequency Condition") +
+  ggtitle("Memory Accuracy") + 
+  kate.theme
+memAccPlot
+```
+
+### Plot: Effects of frequency condition on memory (individual subjects)
+```{r memory accuracy plot 2, fig.width = 10, fig.height = 6}
+memPlotData <- memData %>% 
+  group_by(sub, freqCondFactor) %>% 
+  summarise(meanAcc = mean(memAcc, na.rm = T), sdAcc = sd(memAcc, na.rm = T), N = n(), seAcc = sdAcc/sqrt(N))
+
+#compute error bar limits
+errorBars <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+memAccPlotSub <- ggplot(memPlotData, aes(x = freqCondFactor, y = meanAcc)) +
+  geom_boxplot() +
+  geom_point(aes(group = sub), alpha = .1) +
+  coord_cartesian(ylim = c(0, 1)) +
+  xlab("Frequency Condition") +
+  ylab("Memory Accuracy") +
+  ggtitle("Memory Accuracy") + 
+  kate.theme
+memAccPlotSub
+```
+
+
+## Relation between learning environmental statistics and memory encoding
+```{r memory and frequency indices}
+#create memory benefit index as specified in the pre-registration
+
+  #first compute each subject's average memory performance in the 1 and 5 condition
+temp <- memData %>% 
+  group_by(sub, freqCond, block, age, IQ) %>% 
+  summarise(meanMem = mean(memAcc, na.rm = TRUE))
+  
+#make frequency condition a column in the table and then compute difference
+temp <- spread(temp, freqCond, meanMem) %>%
+  mutate(memDiff = `5` - `1`)
+
+#compute overall memory accuracy
+temp2 <- memData %>% 
+  group_by(sub, block, age) %>% 
+  summarise(overallMeanMem = mean(memAcc, na.rm = TRUE))
+
+#merge data frames and compute memBenefitIndex
+memBenefit <- full_join(temp, temp2, by = c("sub", "block", "age")) %>% 
+  mutate(memBenefitIndex = memDiff / overallMeanMem) %>% 
+  select(-c(`5`, `1`, memDiff, overallMeanMem))
+
+#create frequency distance index  as specified in the pre-registration
+
+  #compute mean z score per frequency condition
+meanZs <- memData %>% 
+  group_by(sub, block, freqCond, age, IQ) %>% 
+  summarise(meanFreqRespZ = mean(freqRespZ, na.rm = TRUE))
+  
+#spread data
+freqDist <- spread(meanZs, freqCond, meanFreqRespZ) %>% 
+  mutate(freqDist = `5` - `1`) %>% 
+  select(-c(`5`, `1`))
+
+#combine with mem benefit index
+subIndices <- full_join(memBenefit, freqDist, by = c("sub", "block", "age", "IQ"))
+
+#remove rows where memBenfit is NaN
+subIndices %<>%
+  filter(!is.na(memBenefitIndex))
+
+#scale frequency distance
+subIndices$freqDistScaled <- scale_this(subIndices$freqDist)
+
+```
+
+### Memory benefit mixed effects model
+```{r memory benefit by frequency index model}
+memBenefit.model <- mixed(memBenefitIndex ~ freqDistScaled *block  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)))
+
+memBenefit.model
+
+#return lmer results
+memBenefit.model.lmer <- mixed(memBenefitIndex ~ freqDistScaled *block  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)), return = "merMod")
+
+summary(memBenefit.model.lmer)
+```
+
+
+### Plot: Relation between frequency distance and memory benefit
+```{r frequency distance memory benefit plot}
+freqDistMemBenefitPlot <- ggplot(subIndices, aes(x = freqDist, y = memBenefitIndex), color = color3, fill = color3) +
+  geom_point(color = color3) +
+  geom_smooth(method = "lm", color = color3, fill = color3) +
+  #facet_wrap(~IQGroup) +
+  xlab("Frequency Distance") +
+  ylab("Memory Benefit Index") +
+  kate.theme
+freqDistMemBenefitPlot
+```
+
+### Item-level relation between frequency reports and memory mixed-effects model
+```{r item-level freq reports and memory data processing}
+#scale frequency reports
+memData$memFreqRespScaled <- scale_this(memData$memFreqResp)
+```
+
+```{r mem freq relation model}
+memFreqRelation.maximal <- mixed(memAcc ~ memFreqRespScaled * block + (memFreqRespScaled * block|sub) + (memFreqRespScaled * block| item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+memFreqRelation.maximal
+
+#return glmer object
+memFreqRelation.maximal.glmer <- mixed(memAcc ~ memFreqRespScaled * block + (memFreqRespScaled * block|sub) + (memFreqRespScaled * block| item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
+
+summary(memFreqRelation.maximal.glmer)
+```
+
+
+### Plot: Effects of frequency report on memory accuracy
+```{r plot memory by explicit frequency (1), fig.align = "center", fig.width = 7, fig.height = 4}
+#plot memory by explicit frequency
+memByExplicitFreq1 <- memData %>%
+  filter(memFreqResp > 0 & freqCond == 1) %>%
+  group_by(memFreqResp, freqCond) %>% 
+  summarise(meanAcc = mean(memAcc), sdAcc= sd(memAcc), N = n(),seAcc = sdAcc/(sqrt(N))) 
+
+memByExplicitFreq5 <- memData %>%
+  filter(memFreqResp > 0 & freqCond == 5) %>%
+  group_by(memFreqResp, freqCond) %>% 
+  summarise(meanAcc = mean(memAcc), sdAcc= sd(memAcc), N = n(),seAcc = sdAcc/(sqrt(N))) 
+
+accLimits <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+#do stuff to make alpha legend continuous
+amin <- 0.1
+highcol <- color1
+lowcol.hex <- as.hexmode(round(col2rgb(highcol) * amin + 255 * (1 - amin)))
+lowcol <- paste0("#",   sep = "",
+                 paste(format(lowcol.hex, width = 2), collapse = ""))
+
+explicitFreqMemPlot1 <- ggplot(memByExplicitFreq1, aes(x = memFreqResp, y = meanAcc, alpha = N), color = color1) +
+  geom_bar(stat = "identity", position = "dodge", fill = highcol, size = .4, color = color1) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0, aes(fill = N), color = color1) +
+  scale_fill_gradient(high = highcol, low = lowcol, name = "Number of Trials", guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")) +
+ geom_errorbar(accLimits, position = position_dodge(width = .9), width = .2, color = "black", alpha = 1) +
+  kate.theme +
+  theme(strip.background = element_blank()) +
+  theme(legend.position = "right", legend.text=element_text(size=12), legend.title = element_text(size = 12)) +
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10"), breaks = c(1,5,10), labels = c("1", "5", "10")) +
+  guides(alpha = F) + 
+  labs(fill = "Alpha\nlabel") +
+  xlab("Explicit Frequency Report") + ylab ("Memory Accuracy") +
+  ggtitle("1-Frequency Condition") +
+  NULL
+explicitFreqMemPlot1
+```
+
+```{r plot memory by explicit frequency (5), fig.align = "center", fig.width = 7, fig.height = 4, include = TRUE}
+#Repeat for 5 frequency condition
+
+#do stuff to make alpha legend continuous
+amin <- 0.1
+highcol <- color3
+lowcol.hex <- as.hexmode(round(col2rgb(highcol) * amin + 255 * (1 - amin)))
+lowcol <- paste0("#",   sep = "",
+                 paste(format(lowcol.hex, width = 2), collapse = ""))
+
+explicitFreqMemPlot5 <- ggplot(memByExplicitFreq5, aes(x = memFreqResp, y = meanAcc, alpha = N), color = color3) +
+  geom_bar(stat = "identity", position = "dodge", fill = highcol, size = .4, color = color3) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0, aes(fill = N), color = color3) +
+  scale_fill_gradient(high = highcol, low = lowcol, name = "Number of Trials", guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")) +
+ geom_errorbar(accLimits, position = position_dodge(width = .9), width = .2, color = "black", alpha = 1) +
+  kate.theme +
+  theme(strip.background = element_blank()) +
+  theme(legend.position = "right", legend.text=element_text(size=12), legend.title = element_text(size = 12)) +
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10"), breaks = c(1,5,10), labels = c("1", "5", "10")) +
+  guides(alpha = F) + 
+  labs(fill = "Alpha\nlabel") +
+  xlab("Explicit Frequency Report") + ylab ("Memory Accuracy") +
+  ggtitle("5-Frequency Condition") +
+  NULL
+explicitFreqMemPlot5
+
+```
+
+```{r plot memory by explicit frequency, fig.align = "center", fig.width = 7, fig.height = 4}
+#Both frequency conditions together
+memByExplicitFreqCombined <- memData %>%
+  filter(memFreqResp > 0) %>%
+  group_by(memFreqResp) %>%
+  summarise(meanAcc = mean(memAcc), sdAcc= sd(memAcc), N = n(),seAcc = sdAcc/(sqrt(N))) 
+
+accLimits <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+#do stuff to make alpha legend continuous
+amin <- 0.1
+highcol <- color2
+lowcol.hex <- as.hexmode(round(col2rgb(highcol) * amin + 255 * (1 - amin)))
+lowcol <- paste0("#",   sep = "",
+                 paste(format(lowcol.hex, width = 2), collapse = ""))
+
+explicitFreqMemPlot <- ggplot(memByExplicitFreqCombined, aes(x = memFreqResp, y = meanAcc, alpha = N), color = color2) +
+  geom_bar(stat = "identity", position = "dodge", fill = highcol, size = .4, color = color2) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0, aes(fill = N), color = color2) +
+  scale_fill_gradient(high = highcol, low = lowcol, name = "Number of Trials", guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")) +
+ geom_errorbar(accLimits, position = position_dodge(width = .9), width = .2, color = "black", alpha = 1) +
+  kate.theme +
+  theme(strip.background = element_blank()) +
+  theme(legend.position = "right", legend.text=element_text(size=12), legend.title = element_text(size = 12)) +
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10"), breaks = c(1,5,10), labels = c("1", "5", "10")) +
+  guides(alpha = F) + 
+  labs(fill = "Alpha\nlabel") +
+  xlab("Explicit Frequency Report") + ylab ("Memory Accuracy") +
+  ggtitle("Both Frequency Conditions") +
+  NULL
+explicitFreqMemPlot
+```
+
+
+# Exploratory analyses: Comparison of E1 and E2
+```{r label data with experiment}
+memData$exp <- 2
+freqData$exp <- 2
+
+#store in new DFs
+memData_exp2 <- memData
+freqData_exp2 <- freqData
+```
+
+```{r import experiment 1 data}
+#identify relevant data files
+freqfiles = list.files(exp1DataFolder, pattern = "freqTask")
+PAfiles = list.files(exp1DataFolder, pattern = "PA")
+memTestFiles = list.files(exp1DataFolder, pattern = "mem..txt")
+memTestGridFiles = list.files(exp1DataFolder, pattern = "Grid")
+freqReports= list.files(exp1DataFolder, pattern = "freqReports")
+
+#frequency data
+freqData <- tibble(filename = freqfiles) %>%
+  mutate(file_contents = map(filename, ~ read_tsv(file.path(exp1DataFolder, .), col_names = c("item", "freqCond", "freqResp", "freqRT", "X5", "X6", "freqTrial")))) %>%
+  separate(filename, into = c("filename", "block"), sep = "k") %>%
+  separate(block, into = c("block", "junk"), sep = ".txt") %>%
+  separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+  unnest() %>%
+  select(-matches("X")) %>%
+  group_by(sub, item, block) %>% 
+  mutate(stimNum = 1, freqAppearanceCount = cumsum(stimNum))  #add appearance count
+
+#paired associates data
+paData <- tibble(filename = PAfiles) %>%
+  mutate(file_contents = map(filename, ~ read_tsv(file.path(exp1DataFolder, .), col_names = c("paAssociate", "item", "associateSide", "paResp", "paRT", "X6", "X7", "paTrial" )))) %>%
+  separate(filename, into = c("filename", "block"), sep = "PA") %>%
+  separate(block, into = c("block", "junk"), sep = ".txt") %>%
+  separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+  unnest() %>%
+  select(-matches("X")) 
+
+#memory test data
+memData <- tibble(filename = memTestFiles) %>%
+    mutate(file_contents = map(filename, ~ read_tsv(file.path(exp1DataFolder, .), col_names = c("item", "X2", "X3", "memRT", "memResp", "X6", "X7")))) %>%
+    separate(filename, into = c("filename", "block"), sep = "mem") %>%
+    separate(block, into = c("block", "junk"), sep = ".txt") %>%
+    separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+    unnest() %>%
+  select(-matches("X")) %>%
+  group_by(sub, item, block) %>% 
+  mutate(stimNum = 1, memAppearanceCount = cumsum(stimNum)) %>%  #add appearance count
+  filter(memAppearanceCount == 1) #remove later appearances
+  
+#memory test grids
+memGrids <- tibble(filename = memTestGridFiles) %>%
+    mutate(file_contents = map(filename, ~ read_tsv(file.path(exp1DataFolder, .), col_names = c("paAssociate", "gridLocation")))) %>%
+    separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename")) %>%
+    unnest()
+
+#frequency reports data
+freqReportsData <- tibble(filename = freqReports) %>%
+    mutate(file_contents = map(filename, ~ read_tsv(file.path(exp1DataFolder, .), col_names = c("item", "X2", "X3", "freqReportRT", "memFreqRespUnfiltered", "X6", "X7")))) %>%
+    separate(filename, into = c("filename", "block"), sep = "mem") %>%
+    separate(block, into = c("block", "junk"), sep = "_freqReports.txt") %>%
+    separate(filename, into = c("sub", "filename"), sep = "_") %>%
+  select(-c("filename", "junk")) %>%
+    unnest() %>%
+  select(-matches("X")) %>% 
+  mutate(memFreqResp = case_when(memFreqRespUnfiltered < 1 ~ NaN, memFreqRespUnfiltered > 0 ~ memFreqRespUnfiltered)) %>% #replace weird frequency reports 
+  select(-memFreqRespUnfiltered)
+       
+#get mean and sd of frequency reports for each subject for each block
+freqRespSubMeans <- freqReportsData %>%
+  group_by(sub, block) %>%
+  summarize(meanFreqResp = mean(memFreqResp, na.rm = T), sdFreqResp = sd(memFreqResp, na.rm = T))
+
+#join with freqReports data and compute z score
+freqReportsData <- full_join(freqReportsData, freqRespSubMeans, by = c("sub", "block")) %>%
+  mutate(freqRespZ = (memFreqResp - meanFreqResp)/sdFreqResp)
+
+#join memory data and pa data
+memData <- full_join(memData, paData, by = c("sub", "item", "block"))
+
+#join memory data and memory grid data
+memData <- full_join(memData, memGrids, by = c("sub", "paAssociate"))
+
+#join memory data and frequency reports
+memData <- full_join(memData, freqReportsData, by = c("sub", "block", "item"))
+
+#compute frequencies for each item for each subject
+frequencies <-freqData %>% 
+  group_by(sub, block, item) %>% 
+  summarise(freqCond = mean(freqCond))
+  
+#join frequency condition with memory data
+memData <- full_join(memData, frequencies, by = c("sub", "block", "item"))
+
+#remove rows from memDat which just have memory test lures
+memData %<>%
+  filter(!is.na(item))
+
+#add experiment
+memData$exp <- 1
+freqData$exp <- 1
+
+#Now we have two dataframes with all of our task data: memData and freqData
+
+```
+
+```{r import experiment 1 subject information}
+#read in excel sheet with subject information
+subInfo <- read_excel(glue("{exp1DataFolder}/subInfo.xlsx"))  %>%
+  mutate_at(.vars = vars(sub), .fun = as.character)
+
+#Join subject info into mem data frame and freq data frame
+memData <- full_join(memData, subInfo, by = "sub")
+freqData <- full_join(freqData, subInfo, by = "sub") 
+paData <- full_join(paData, subInfo, by = "sub")
+
+#filter out participants below age 18
+memData %<>%
+  filter(age > 18.0)
+
+freqData %<>%
+  filter(age > 18.0)
+
+paData %<>%
+  filter(age > 18.0)
+```
+
+
+```{r paired associates exclusion exp1}
+## Identify and exclude subjects who performed below chance (50%) on paired associates task ##
+
+#Compute PA accuracy for each trial for each subject
+paData %<>% 
+  mutate(acc = case_when(paResp - associateSide == 0 ~ 1, paResp - associateSide != 0 ~ 0))
+
+#Compute PA accuracy for each subject for each block - have to respond correctly 75% of the time or more to be statistically above chance
+paAccData.subBlocks <- paData %>% 
+  group_by(sub, block) %>% 
+  summarize(meanPaAcc = mean(acc)) %>% 
+  mutate(include = case_when(meanPaAcc > .74 ~ 1, meanPaAcc <.75 ~ 0))
+
+#Spread include so that there is an include1 and include2 columns and identify subjects who should be excluded from either block
+paAccData.sub <- paAccData.subBlocks %>% 
+  select(-meanPaAcc) %>% 
+  spread(block, include) %>% 
+  rename(include1 = `1`, include2 = `2`) %>% 
+  mutate(include = case_when(include1 + include2 == 2 ~ 1, include1 + include2 < 2 ~0)) %>% select(-c(include1, include2))
+
+#identify the sub ID of the excluded subs
+excludedSubs <- paAccData.sub %>%
+  filter(include == 0)
+excludedSubIDs = excludedSubs$sub
+
+#Remove excluded subs from paData, subInfo, memData, freqData
+subInfo %<>% filter(sub != excludedSubIDs)
+memData %<>% filter(sub != excludedSubIDs)
+freqData %<>% filter(sub != excludedSubIDs)
+
+#compute mean and sd of included subs
+paStats <- paAccData.subBlocks %>% 
+  group_by(include) %>%
+  summarize(grandMeanPaAcc = mean(meanPaAcc), sdPaAcc = sd(meanPaAcc), minPaAcc = min(meanPaAcc))
+
+#display table
+pander(paStats)
+```
+
+
+## Frequency-learning task
+```{r compute frequency task accuracy both exps}
+#compute accuracy for each trial
+freqData %<>% 
+  mutate(freqAcc = case_when(freqResp == 0 & freqAppearanceCount == 1 ~ 1, freqResp == 0 & freqAppearanceCount > 1 ~ 0, freqResp == 1 & freqAppearanceCount > 1 ~ 1, freqResp == 1 & freqAppearanceCount == 1 ~ 0))
+
+#combine freqData across experiments
+freqDataCombined <- rbind(freqData, freqData_exp2)
+
+#split data based on whether it was the first presentation or repeated presentation
+freqDataFirst <- freqDataCombined %>%
+  filter(freqAppearanceCount == 1)
+
+freqDataRepeated <- freqDataCombined %>%
+  filter(freqAppearanceCount >1)
+
+#for repeated presentation, compute mean accuracy in frequency task for each subject
+freqDataSubBlockMeans <- freqDataRepeated %>% 
+  group_by(sub, block, age) %>% 
+  summarise(N = n(), meanSubAcc = mean(freqAcc, na.rm = TRUE)) %>% 
+  arrange(meanSubAcc) %>%
+  mutate(badFreqSub = case_when(meanSubAcc < .10 ~ 1, meanSubAcc > .10 ~ 0))
+
+#display table of means
+freqDataSubBlockMeans %>% arrange(meanSubAcc)
+
+#merge data frames
+freqAccData <- merge(freqDataCombined, freqDataSubBlockMeans, by = c("sub", "block", "age"), all = TRUE)
+
+#remove subjects who performed poorly in the frequency task
+freqAccDataFiltered <- freqAccData %>%
+  filter(meanSubAcc > .10) %>%
+  droplevels()
+```
+
+
+
+```{r first appearance count freq acc process data both exps}
+#set block, subject, item, and exp as factors
+freqAccDataFiltered$sub <- as.factor(freqAccDataFiltered$sub)
+freqAccDataFiltered$item <- as.factor(freqAccDataFiltered$item)
+freqAccDataFiltered$block <- as.factor(freqAccDataFiltered$block)
+freqAccDataFiltered$exp <- as.factor(freqAccDataFiltered$exp)
+
+#re-split based on first vs. repeated appearance
+freqDataFirst <- freqAccDataFiltered %>%
+  filter(freqAppearanceCount == 1)
+  
+freqDataRepeated <- freqAccDataFiltered %>%
+  filter(freqAppearanceCount > 1)
+```
+
+### Frequency-learning accuracy
+#### Frequency accuracy mixed-effects model: New items
+```{r first appearance count freq acc maximal model both exps, eval = F}
+freqFirstAppearanceAcc.bothExps.maximal <- mixed(freqAcc ~ block*exp + (block|sub) + (block*exp|item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r first appearance count freq acc 2 both exps}
+freqFirstAppearanceAcc.bothExps.2 <- mixed(freqAcc ~ block*exp + (block||sub) + (block*exp||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
+
+freqFirstAppearanceAcc.bothExps.2
+
+#return glmer results
+freqFirstAppearanceAcc.bothExps.2.glmer <- mixed(freqAcc ~ block*exp + (block||sub) + (block*exp||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
+
+summary(freqFirstAppearanceAcc.bothExps.2.glmer)
+```
+
+#### Frequency accuracy mixed-effects model: Repeated items
+```{r first appearance count freq acc scale variables both exps}
+freqDataRepeated$appearanceCountScaled <- scale_this(freqDataRepeated$freqAppearanceCount)
+```
+
+```{r freq acc maximal model both exps, eval = F}
+freqAcc.bothExps.maximal <- mixed(freqAcc ~  block * appearanceCountScaled *exp + (block* appearanceCountScaled|sub) + (block * appearanceCountScaled * exp|item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r freq acc  model 2 both exps}
+freqAcc.bothExps.2 <- mixed(freqAcc ~  block * appearanceCountScaled *exp + (block* appearanceCountScaled||sub) + (block * appearanceCountScaled * exp||item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
+
+#display
+freqAcc.bothExps.2
+
+#return glmer object
+freqAcc.bothExps.2.glmer <- mixed(freqAcc ~  block * appearanceCountScaled *exp + (block* appearanceCountScaled||sub) + (block * appearanceCountScaled * exp||item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
+
+#display
+summary(freqAcc.bothExps.2.glmer)
+```
+
+
+#### Plot: Frequency task accuracy
+```{r freqAcc interaction plot both exps}
+freqAccPlotData <- freqAccData %>% 
+  group_by(freqAppearanceCount, exp, block) %>% 
+  summarise(meanFreqAcc = mean(freqAcc, na.rm = T), sdFreqAcc = sd(freqAcc, na.rm = T), N = n(), seAcc = sdFreqAcc/sqrt(N))
+
+#compute error bar limits
+errorBars <- aes(ymax = meanFreqAcc + seAcc, ymin = meanFreqAcc - seAcc)
+
+#make plot
+freqAccPlot <- ggplot(freqAccPlotData, aes(x = freqAppearanceCount, y = meanFreqAcc, fill = block)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_errorbar(errorBars, position = position_dodge(width = .9), width = .1) +
+  xlab("Appearance Count") +
+  ylab("Frequency Task Accuracy") +
+  #ggtitle("Frequency Task Reaction Times") + 
+  scale_fill_manual(values = c(color1, color3)) +
+  facet_wrap(~exp) +
+  kate.theme
+freqAccPlot
+```
+
+
+### Frequency task reaction times
+```{r frequency task RT data processing both exps}
+#Filter out inaccurate trials
+freqRTdata <-freqDataRepeated %>%
+  filter(freqAcc == 1)
+
+#scale appearance count
+freqRTdata$appearanceCountScaled <- scale_this(freqRTdata$appearanceCount)
+```
+
+#### Frequency task reaction times mixed-effects model
+```{r frequency task RT maximal model both exps, eval = F}
+freqRT.bothExps.maximal <- mixed(freqRT ~  appearanceCountScaled * block * exp + (appearanceCountScaled * block|sub) + (appearanceCountScaled * block * exp|item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r frequency task RT model 2 both exps}
+#remove correlations
+freqRT.bothExps.2 <- mixed(freqRT ~  appearanceCountScaled * block * exp + (appearanceCountScaled * block||sub) + (appearanceCountScaled * block * exp||item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
+
+freqRT.bothExps.2 
+
+#display lmer results
+freqRT.bothExps.2.lmer <- mixed(freqRT ~  appearanceCountScaled * block * exp + (appearanceCountScaled * block||sub) + (appearanceCountScaled * block * exp||item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
+
+summary(freqRT.bothExps.2.lmer)
+```
+
+
+#### Plot: Frequency task reaction times
+```{r freqRT interaction plot both exps}
+freqRTPlotData <- freqRTdata %>% 
+  group_by(freqAppearanceCount, exp) %>% 
+  summarise(meanFreqRT = mean(freqRT, na.rm = T), sdFreqRT = sd(freqRT, na.rm = T), N = n(), seRT = sdFreqRT/sqrt(N))
+
+#compute error bar limits
+errorBars <- aes(ymax = meanFreqRT + seRT, ymin = meanFreqRT - seRT)
+
+#make plot
+freqRTPlot <- ggplot(freqRTPlotData, aes(x = freqAppearanceCount, y = meanFreqRT, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_errorbar(errorBars, position = position_dodge(width = .9), width = .1) +
+  xlab("Appearance Count") +
+  ylab("Frequency Task Reaction Times (s)") +
+  ggtitle("Frequency Task Reaction Times") + 
+  scale_fill_manual(values = c(color1, color3)) +
+  kate.theme
+freqRTPlot
+```
+
+
+## Explicit frequency reports
+```{r compute freq response error both exps}
+#remove columns from memData that are not in the memData_exp2 data frame
+memData %<>% select(-c(stimNum, memAppearanceCount))
+
+#compute response error and response error magnitude
+memData %<>% mutate(memFreqRespError = memFreqResp - as.numeric(as.character(freqCond)), memFreqRespErrorMagnitude = abs(memFreqRespError))
+
+#remove columns from memData_exp2 that are not in the memData data frame
+memData_exp2 %<>% select(-c(memAcc, memFreqRespScaled))
+
+#combine them
+memDataCombined <-  bind_rows(memData, memData_exp2)
+
+#code frequency condition, block, subject, item, and experiment as factors
+memDataCombined$freqCondFactor <- as.factor(memDataCombined$freqCond)
+memDataCombined$exp <- as.factor(memDataCombined$exp)
+memDataCombined$sub <- as.factor(memDataCombined$sub)
+memDataCombined$block <- as.factor(memDataCombined$block)
+memDataCombined$item <- as.factor(memDataCombined$item)
+```
+
+### Frequency error mixed-effects model
+```{r explicit freq error maximal model both exps, eval = F}
+freqError.bothExps.maximal <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *exp *block+ (freqCondFactor*block|sub) + (freqCondFactor *exp *block|item), data = memDataCombined, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r explicit freq error model 2 both exps}
+#remove correlations
+freqError.bothExps.2 <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *exp *block+ (freqCondFactor*block||sub) + (freqCondFactor *exp *block||item), data = memDataCombined, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
+
+freqError.bothExps.2
+
+#display lmer results
+freqError.bothExps.2.lmer <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *exp *block+ (freqCondFactor*block||sub) + (freqCondFactor *exp *block||item), data = memDataCombined, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
+
+summary(freqError.bothExps.2.lmer)
+```
+
+
+### Plot: Frequency report distributions
+```{r frequency histograms both exps}
+#plot histogram of frequency responses as a function of frequency
+meanFreqResp <- memDataCombined %>% 
+  group_by(freqCond, exp) %>% 
+  summarise(meanFreqResp = mean(memFreqResp, na.rm = TRUE))
+
+#make plot
+freqRespHist <- ggplot(memDataCombined, aes(x = (memFreqResp), color = freqCondFactor, fill = freqCondFactor)) +
+  facet_wrap(~exp) +
+  stat_count(position = "identity", alpha = .5) +
+  scale_fill_manual(values = c(color1, color3), name = "Frequency Condition") +
+  scale_color_manual(values = c(color1, color3), name = "Frequency Condition") + 
+  xlab("Reported Frequency") +
+  ylab("Number of Responses") +
+   scale_x_discrete(limits = c(1:10)) +
+  ggtitle("Adults") +
+  kate.theme 
+freqRespHist
+```
+
+
+## Memory test
+```{r compute memory accuracy both exps}
+#compute memory accuracy for each trial
+memDataCombined %<>%
+  mutate(memAcc = case_when(as.character(memResp) == as.character(gridLocation) ~ 1,
+                            as.character(memResp) != as.character(gridLocation) ~ 0))
+                            
+```
+
+### Memory accuracy mixed-effects model
+```{r memory accuracy maximal model both exps, eval = F}
+memAcc.bothExps.maximal <- mixed(memAcc ~  freqCondFactor * block *exp + (freqCondFactor*block|sub) + (freqCondFactor*block*exp|item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r memory accuracy model 2 both exps}
+memAcc.bothExps.2 <- mixed(memAcc ~  freqCondFactor * block *exp + (freqCondFactor*block||sub) + (freqCondFactor*block*exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
+
+memAcc.bothExps.2
+
+#display glmer results
+memAcc.bothExps.2.glmer <- mixed(memAcc ~  freqCondFactor * block *exp + (freqCondFactor*block||sub) + (freqCondFactor*block*exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
+
+summary(memAcc.bothExps.2)
+```
+
+### Plot: Effects of frequency condition and block on memory
+```{r memory accuracy plot both exps, fig.width = 10, fig.height = 6}
+memPlotData <- memDataCombined %>% 
+  group_by(freqCondFactor, block, exp) %>% 
+  summarise(meanAcc = mean(memAcc, na.rm = T), sdAcc = sd(memAcc, na.rm = T), N = n(), seAcc = sdAcc/sqrt(N))
+
+#compute error bar limits
+errorBars <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+memAccPlot <- ggplot(memPlotData, aes(x = block, fill = freqCondFactor, y = meanAcc)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_errorbar(errorBars, position = position_dodge(width = .9), width = .1) +
+  facet_wrap(~ exp) +
+  coord_cartesian(ylim = c(0, .75)) +
+  xlab("Experiment Block") +
+  ylab("Memory Accuracy") +
+  scale_fill_manual(values = c(color1, color3), name = "Frequency Condition") +
+  ggtitle("Memory Accuracy") + 
+  kate.theme
+memAccPlot
+
+```
+
+### Plot: Effects of frequency condition on memory (individual subjects)
+```{r memory accuracy plot 2 both exps, fig.width = 10, fig.height = 6}
+memPlotData <- memDataCombined %>% 
+  group_by(sub, freqCondFactor, exp, block) %>% 
+  summarise(meanAcc = mean(memAcc, na.rm = T), sdAcc = sd(memAcc, na.rm = T), N = n(), seAcc = sdAcc/sqrt(N)) %>%
+  mutate(Experiment = case_when(exp == 1 ~ "Experiment 1", exp == 2 ~ "Experiment 2"))
+
+#compute error bar limits
+errorBars <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+memAccPlotSub <- ggplot(memPlotData, aes(x = block, y = meanAcc, fill = freqCondFactor)) +
+  facet_wrap(~ Experiment) +
+  geom_boxplot(position = position_dodge(.8), alpha = .8) +
+  scale_fill_manual(values = c(color1, color3), name = "Frequency Condition") +
+  stat_summary(fun.y = mean, geom = "point",
+               shape = 4, size = 2.5, color = "white", position = position_dodge(.8)) +
+  coord_cartesian(ylim = c(0, 1)) +
+  xlab("Block") +
+  ylab("Memory Accuracy") +
+  #ggtitle("Memory Accuracy") + 
+  kate.theme
+memAccPlotSub
+
+#ggsave("memAccBothExps.png", width = 8, height = 4, units = "in", dpi = 1000)
+```
+
+
+## Relation between learning environmental statistics and memory encoding
+```{r memory and frequency indices both exps}
+#create memory benefit index as specified in the pre-registration
+  #first compute each subject's average memory performance in the 1 and 5 condition
+temp <- memDataCombined %>% 
+  group_by(sub, freqCond, block, age, IQ, exp) %>% 
+  summarise(meanMem = mean(memAcc, na.rm = TRUE))
+  
+#make frequency condition a column in the table and then compute difference
+temp <- spread(temp, freqCond, meanMem) %>%
+  mutate(memDiff = `5` - `1`)
+
+  #compute overall memory accuracy
+temp2 <- memDataCombined %>% 
+  group_by(sub, block, age) %>% 
+  summarise(overallMeanMem = mean(memAcc, na.rm = TRUE))
+
+  #merge data frames and compute memBenefitIndex
+memBenefit <- full_join(temp, temp2, by = c("sub", "block", "age")) %>% 
+  mutate(memBenefitIndex = memDiff / overallMeanMem) %>% 
+  select(-c(`5`, `1`, memDiff, overallMeanMem))
+
+#create frequency distance index  as specified in the pre-registration
+
+  #compute mean z score per frequency condition
+meanZs <- memDataCombined %>% 
+  group_by(sub, block, freqCond, age, IQ) %>% 
+  summarise(meanFreqRespZ = mean(freqRespZ, na.rm = TRUE))
+  
+  #spread data
+freqDist <- spread(meanZs, freqCond, meanFreqRespZ) %>% 
+  mutate(freqDist = `5` - `1`) %>% 
+  select(-c(`5`, `1`))
+
+#combine with mem benefit index
+subIndices <- merge(memBenefit, freqDist, by = c("sub", "block", "age", "IQ"))
+
+#remove rows where memBenfit is NaN
+subIndices %<>%
+  filter(!is.na(memBenefitIndex))
+
+#scale age, IQ, and frequency distance
+subIndices$freqDistScaled <- scale_this(subIndices$freqDist)
+
+```
+
+### Memory benefit mixed-effects model
+```{r memory benefit by frequency index model both exps}
+memBenefit.bothExps.model <- mixed(memBenefitIndex ~ freqDistScaled *block *exp  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)))
+
+memBenefit.bothExps.model
+
+#display lmer results
+memBenefit.bothExps.model.lmer <- mixed(memBenefitIndex ~ freqDistScaled *block *exp  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)), return = "merMod")
+
+summary(memBenefit.bothExps.model.lmer)
+```
+
+### Plot: Relation between frequency distance and memory benefit
+```{r frequency distance memory benefit plot both exps}
+freqDistMemBenefitPlot <- ggplot(subIndices, aes(x = freqDist, y = memBenefitIndex), color = color3, fill = color3) +
+  geom_point(color = color3) +
+  geom_smooth(method = "lm", color = color3, fill = color3) +
+  facet_wrap(~exp) +
+  xlab("Frequency Distance") +
+  ylab("Memory Benefit Index") +
+  kate.theme
+freqDistMemBenefitPlot
+```
+
+### Item-level relation between frequency reports and memory mixed-effects model
+```{r item-level freq reports and memory data processing both exps}
+#scale frequency reports
+memDataCombined$memFreqRespScaled <- scale_this(memDataCombined$memFreqResp)
+```
+
+```{r mem freq relation model both exps, eval = F}
+memFreqRelation.bothExps.maximal <- mixed(memAcc ~ memFreqRespScaled * block *exp + (memFreqRespScaled * block|sub) + (memFreqRespScaled * block * exp|item),data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
+
+#does not converge
+```
+
+```{r mem freq relation model 2 both exps}
+memFreqRelation.bothExps.2 <- mixed(memAcc ~ memFreqRespScaled * block *exp + (memFreqRespScaled * block||sub) + (memFreqRespScaled * block * exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
+
+memFreqRelation.bothExps.2
+
+#display glmer results
+memFreqRelation.bothExps.2.glmer <- mixed(memAcc ~ memFreqRespScaled * block *exp + (memFreqRespScaled * block||sub) + (memFreqRespScaled * block * exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
+
+summary(memFreqRelation.bothExps.2.glmer)
+```
+
+
+### Plot: Effects of frequency report on memory accuracy
+```{r plot memory by explicit frequency (1) both exps, fig.align = "center", fig.width = 7, fig.height = 4}
+#plot memory by explicit frequency
+memByExplicitFreq1 <- memDataCombined %>%
+  filter(memFreqResp > 0 & freqCond == 1) %>%
+  group_by(memFreqResp, freqCond, exp) %>% 
+  summarise(meanAcc = mean(memAcc), sdAcc= sd(memAcc), N = n(),seAcc = sdAcc/(sqrt(N))) 
+
+memByExplicitFreq5 <- memDataCombined %>%
+  filter(memFreqResp > 0 & freqCond == 5) %>%
+  group_by(memFreqResp, freqCond, exp) %>% 
+  summarise(meanAcc = mean(memAcc), sdAcc= sd(memAcc), N = n(),seAcc = sdAcc/(sqrt(N))) 
+
+accLimits <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+#do stuff to make alpha legend continuous
+amin <- 0.1
+highcol <- color1
+lowcol.hex <- as.hexmode(round(col2rgb(highcol) * amin + 255 * (1 - amin)))
+lowcol <- paste0("#",   sep = "",
+                 paste(format(lowcol.hex, width = 2), collapse = ""))
+
+explicitFreqMemPlot1 <- ggplot(memByExplicitFreq1, aes(x = memFreqResp, y = meanAcc, alpha = N), color = color1) +
+  geom_bar(stat = "identity", position = "dodge", fill = highcol, size = .4, color = color1) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0, aes(fill = N), color = color1) +
+  scale_fill_gradient(high = highcol, low = lowcol, name = "Number of Trials", guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")) +
+ geom_errorbar(accLimits, position = position_dodge(width = .9), width = .2, color = "black", alpha = 1) +
+  facet_wrap(~ exp) +
+  kate.theme +
+  theme(strip.background = element_blank()) +
+  theme(legend.position = "right", legend.text=element_text(size=12), legend.title = element_text(size = 12)) +
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10"), breaks = c(1,5,10), labels = c("1", "5", "10")) +
+  guides(alpha = F) + 
+  labs(fill = "Alpha\nlabel") +
+  xlab("Explicit Frequency Report") + ylab ("Memory Accuracy") +
+  ggtitle("1-Frequency Condition") +
+  NULL
+explicitFreqMemPlot1
+```
+
+```{r plot memory by explicit frequency (5) both exps, fig.align = "center", fig.width = 7, fig.height = 4}
+#Repeat for 5 frequency condition
+
+#do stuff to make alpha legend continuous
+amin <- 0.1
+highcol <- color3
+lowcol.hex <- as.hexmode(round(col2rgb(highcol) * amin + 255 * (1 - amin)))
+lowcol <- paste0("#",   sep = "",
+                 paste(format(lowcol.hex, width = 2), collapse = ""))
+
+explicitFreqMemPlot5 <- ggplot(memByExplicitFreq5, aes(x = memFreqResp, y = meanAcc, alpha = N), color = color3) +
+  geom_bar(stat = "identity", position = "dodge", fill = highcol, size = .4, color = color3) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0, aes(fill = N), color = color3) +
+  scale_fill_gradient(high = highcol, low = lowcol, name = "Number of Trials", guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")) +
+ geom_errorbar(accLimits, position = position_dodge(width = .9), width = .2, color = "black", alpha = 1) +
+  facet_wrap(~ exp) +
+  kate.theme +
+  theme(strip.background = element_blank()) +
+  theme(legend.position = "right", legend.text=element_text(size=12), legend.title = element_text(size = 12)) +
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10"), breaks = c(1,5,10), labels = c("1", "5", "10")) +
+  guides(alpha = F) + 
+  labs(fill = "Alpha\nlabel") +
+  xlab("Explicit Frequency Report") + ylab ("Memory Accuracy") +
+  ggtitle("5-Frequency Condition") +
+  NULL
+explicitFreqMemPlot5
+
+```
+
+```{r plot memory by explicit frequency both exps, fig.align = "center", fig.width = 7, fig.height = 4}
+#Both frequency conditions together
+memByExplicitFreqCombined <- memDataCombined %>% 
+  filter(memFreqResp > 0) %>%
+  group_by(memFreqResp, exp) %>% 
+  summarise(meanAcc = mean(memAcc), sdAcc= sd(memAcc), N = n(),seAcc = sdAcc/(sqrt(N)))  %>%
+  mutate(Experiment = case_when(exp == 1 ~ "Experiment 1", exp == 2 ~ "Experiment 2"))
+
+accLimits <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
+
+#do stuff to make alpha legend continuous
+amin <- 0.1
+highcol <- color2
+lowcol.hex <- as.hexmode(round(col2rgb(highcol) * amin + 255 * (1 - amin)))
+lowcol <- paste0("#",   sep = "",
+                 paste(format(lowcol.hex, width = 2), collapse = ""))
+
+explicitFreqMemPlot <- ggplot(memByExplicitFreqCombined, aes(x = memFreqResp, y = meanAcc, alpha = N), color = color2) +
+  geom_bar(stat = "identity", position = "dodge", fill = highcol, size = .4, color = color2) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0, aes(fill = N), color = color2) +
+  scale_fill_gradient(high = highcol, low = lowcol, name = "Number of Trials", guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")) +
+ geom_errorbar(accLimits, position = position_dodge(width = .9), width = .2, color = "black", alpha = 1) +
+  facet_wrap(~ Experiment) +
+  kate.theme +
+  theme(strip.background = element_blank()) +
+  theme(legend.position = "right", legend.text=element_text(size=12), legend.title = element_text(size = 12)) +
+  scale_x_discrete(limits = c("1","2","3","4","5","6","7","8","9","10"), breaks = c(1,5,10), labels = c("1", "5", "10")) +
+  guides(alpha = F) + 
+  labs(fill = "Alpha\nlabel") +
+  xlab("Explicit Frequency Report") + ylab ("Memory Accuracy") +
+  #ggtitle("Both Frequency Conditions") +
+  NULL
+explicitFreqMemPlot
+
+#ggsave("explicitFreqMemPlot.png", width = 8, height = 4, units = "in", dpi = 1000)
+```
