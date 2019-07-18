@@ -48,6 +48,8 @@ library(lmSupport)
 library(pander)
 library(sjPlot)
 library(optimx)
+library(kableExtra)
+library(jtools)
 
 #label data folders
 dataFolder <- "E2_anonymized_data/" #Experiment 2 data
@@ -306,14 +308,13 @@ freqFirstAppearanceAcc.maximal <- mixed(freqAcc ~ block + (block|sub) + (block|i
 freqFirstAppearanceAcc.2 <- mixed(freqAcc ~ block + (block||sub) + (block||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re =T)
 
 #display mixed output
-freqFirstAppearanceAcc.2
-
+nice(freqFirstAppearanceAcc.2)
 
 #return glmer output
 freqFirstAppearanceAcc.2.glmer <- mixed(freqAcc ~ block + (block||sub) + (block||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re =T, return = "merMod")
 
 #display glmer output
-summary(freqFirstAppearanceAcc.2.glmer)
+summ(freqFirstAppearanceAcc.2.glmer)
 ```
 
 
@@ -325,12 +326,12 @@ freqDataRepeated$appearanceCountScaled <- scale_this(freqDataRepeated$freqAppear
 ```{r freq acc maximal model}
 freqAcc.maximal <- mixed(freqAcc ~  block * appearanceCountScaled + (block* appearanceCountScaled|sub) + (block * appearanceCountScaled|item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
 
-freqAcc.maximal 
+nice(freqAcc.maximal) 
 
 #return glmer output
 freqAcc.maximal.glmer <- mixed(freqAcc ~  block * appearanceCountScaled + (block* appearanceCountScaled|sub) + (block * appearanceCountScaled|item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
 
-summary(freqAcc.maximal.glmer)
+summ(freqAcc.maximal.glmer)
 ```
 
 
@@ -348,12 +349,12 @@ freqRTdata$appearanceCountScaled <- scale_this(freqRTdata$freqAppearanceCount)
 ```{r frequency task RT maximal model}
 freqRT.maximal <- mixed(freqRT ~  appearanceCountScaled * block + (appearanceCountScaled * block|sub) + (appearanceCountScaled * block|item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
 
-freqRT.maximal
+nice(freqRT.maximal)
 
 #return lmer results
 freqRT.maximal.lmer <- mixed(freqRT ~  appearanceCountScaled * block + (appearanceCountScaled * block|sub) + (appearanceCountScaled * block|item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
 
-summary(freqRT.maximal.lmer)
+summ(freqRT.maximal.lmer)
 ```
 
 #### Plot: Frequency task reaction times
@@ -453,13 +454,13 @@ memAcc.maximal <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block
 #remove correlations
 memAcc.2 <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block||sub) + (freqCondFactor*block||item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
 
-memAcc.2
+nice(memAcc.2)
 
 #return glmer results
 
 memAcc.2.glmer <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block||sub) + (freqCondFactor*block||item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
-summary(memAcc.2.glmer)
+summ(memAcc.2.glmer)
 ```
 
 ### Plot: Effects of frequency condition and block on memory
@@ -556,12 +557,12 @@ subIndices$freqDistScaled <- scale_this(subIndices$freqDist)
 ```{r memory benefit by frequency index model}
 memBenefit.model <- mixed(memBenefitIndex ~ freqDistScaled *block  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)))
 
-memBenefit.model
+nice(memBenefit.model)
 
 #return lmer results
 memBenefit.model.lmer <- mixed(memBenefitIndex ~ freqDistScaled *block  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)), return = "merMod")
 
-summary(memBenefit.model.lmer)
+summ(memBenefit.model.lmer)
 ```
 
 
@@ -586,12 +587,12 @@ memData$memFreqRespScaled <- scale_this(memData$memFreqResp)
 ```{r mem freq relation model}
 memFreqRelation.maximal <- mixed(memAcc ~ memFreqRespScaled * block + (memFreqRespScaled * block|sub) + (memFreqRespScaled * block| item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
 
-memFreqRelation.maximal
+nice(memFreqRelation.maximal)
 
 #return glmer object
 memFreqRelation.maximal.glmer <- mixed(memAcc ~ memFreqRespScaled * block + (memFreqRespScaled * block|sub) + (memFreqRespScaled * block| item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
 
-summary(memFreqRelation.maximal.glmer)
+summ(memFreqRelation.maximal.glmer)
 ```
 
 
@@ -931,12 +932,12 @@ freqFirstAppearanceAcc.bothExps.maximal <- mixed(freqAcc ~ block*exp + (block|su
 ```{r first appearance count freq acc 2 both exps}
 freqFirstAppearanceAcc.bothExps.2 <- mixed(freqAcc ~ block*exp + (block||sub) + (block*exp||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
 
-freqFirstAppearanceAcc.bothExps.2
+nice(freqFirstAppearanceAcc.bothExps.2)
 
 #return glmer results
 freqFirstAppearanceAcc.bothExps.2.glmer <- mixed(freqAcc ~ block*exp + (block||sub) + (block*exp||item), data = freqDataFirst, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
-summary(freqFirstAppearanceAcc.bothExps.2.glmer)
+summ(freqFirstAppearanceAcc.bothExps.2.glmer)
 ```
 
 #### Frequency accuracy mixed-effects model: Repeated items
@@ -954,13 +955,13 @@ freqAcc.bothExps.maximal <- mixed(freqAcc ~  block * appearanceCountScaled *exp 
 freqAcc.bothExps.2 <- mixed(freqAcc ~  block * appearanceCountScaled *exp + (block* appearanceCountScaled||sub) + (block * appearanceCountScaled * exp||item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
 
 #display
-freqAcc.bothExps.2
+nice(freqAcc.bothExps.2)
 
 #return glmer object
 freqAcc.bothExps.2.glmer <- mixed(freqAcc ~  block * appearanceCountScaled *exp + (block* appearanceCountScaled||sub) + (block * appearanceCountScaled * exp||item), data = freqDataRepeated, family = binomial, method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
 #display
-summary(freqAcc.bothExps.2.glmer)
+summ(freqAcc.bothExps.2.glmer)
 ```
 
 
@@ -1008,12 +1009,12 @@ freqRT.bothExps.maximal <- mixed(freqRT ~  appearanceCountScaled * block * exp +
 #remove correlations
 freqRT.bothExps.2 <- mixed(freqRT ~  appearanceCountScaled * block * exp + (appearanceCountScaled * block||sub) + (appearanceCountScaled * block * exp||item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
 
-freqRT.bothExps.2 
+nice(freqRT.bothExps.2)
 
 #display lmer results
 freqRT.bothExps.2.lmer <- mixed(freqRT ~  appearanceCountScaled * block * exp + (appearanceCountScaled * block||sub) + (appearanceCountScaled * block * exp||item), data = freqRTdata, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
-summary(freqRT.bothExps.2.lmer)
+summ(freqRT.bothExps.2.lmer)
 ```
 
 
@@ -1072,12 +1073,12 @@ freqError.bothExps.maximal <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *
 #remove correlations
 freqError.bothExps.2 <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *exp *block+ (freqCondFactor*block||sub) + (freqCondFactor *exp *block||item), data = memDataCombined, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
 
-freqError.bothExps.2
+nice(freqError.bothExps.2)
 
 #display lmer results
 freqError.bothExps.2.lmer <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *exp *block+ (freqCondFactor*block||sub) + (freqCondFactor *exp *block||item), data = memDataCombined, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
-summary(freqError.bothExps.2.lmer)
+summ(freqError.bothExps.2.lmer)
 ```
 
 
@@ -1122,12 +1123,12 @@ memAcc.bothExps.maximal <- mixed(memAcc ~  freqCondFactor * block *exp + (freqCo
 ```{r memory accuracy model 2 both exps}
 memAcc.bothExps.2 <- mixed(memAcc ~  freqCondFactor * block *exp + (freqCondFactor*block||sub) + (freqCondFactor*block*exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
 
-memAcc.bothExps.2
+nice(memAcc.bothExps.2)
 
 #display glmer results
 memAcc.bothExps.2.glmer <- mixed(memAcc ~  freqCondFactor * block *exp + (freqCondFactor*block||sub) + (freqCondFactor*block*exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
-summary(memAcc.bothExps.2)
+summ(memAcc.bothExps.2.glmer)
 ```
 
 ### Plot: Effects of frequency condition and block on memory
@@ -1230,12 +1231,12 @@ subIndices$freqDistScaled <- scale_this(subIndices$freqDist)
 ```{r memory benefit by frequency index model both exps}
 memBenefit.bothExps.model <- mixed(memBenefitIndex ~ freqDistScaled *block *exp  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)))
 
-memBenefit.bothExps.model
+nice(memBenefit.bothExps.model)
 
 #display lmer results
 memBenefit.bothExps.model.lmer <- mixed(memBenefitIndex ~ freqDistScaled *block *exp  + (1|sub), data = subIndices, method = "KR", control = lmerControl(optCtrl=list(maxfun=1e6)), return = "merMod")
 
-summary(memBenefit.bothExps.model.lmer)
+summ(memBenefit.bothExps.model.lmer)
 ```
 
 ### Plot: Relation between frequency distance and memory benefit
@@ -1265,12 +1266,12 @@ memFreqRelation.bothExps.maximal <- mixed(memAcc ~ memFreqRespScaled * block *ex
 ```{r mem freq relation model 2 both exps}
 memFreqRelation.bothExps.2 <- mixed(memAcc ~ memFreqRespScaled * block *exp + (memFreqRespScaled * block||sub) + (memFreqRespScaled * block * exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T)
 
-memFreqRelation.bothExps.2
+nice(memFreqRelation.bothExps.2)
 
 #display glmer results
 memFreqRelation.bothExps.2.glmer <- mixed(memAcc ~ memFreqRespScaled * block *exp + (memFreqRespScaled * block||sub) + (memFreqRespScaled * block * exp||item), data = memDataCombined, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
-summary(memFreqRelation.bothExps.2.glmer)
+summ(memFreqRelation.bothExps.2.glmer)
 ```
 
 
