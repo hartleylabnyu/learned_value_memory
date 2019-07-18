@@ -1,5 +1,5 @@
 ---
-title: "Experiment 1 Analyses"
+title: "Memory's reflection of learned information value increases across development: Experiment 1 analyses"
 author: "Kate Nussenbaum"
 date: "12/7/18"
 output:
@@ -49,7 +49,7 @@ library(sjPlot)
 library(optimx)
 
 #Set path to data
-inputDir = "anonymized_data/"
+inputDir = "E1_anonymized_data/"
 ```
 
 ```{r create ggplot theme}

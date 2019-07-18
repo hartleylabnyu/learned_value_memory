@@ -1,5 +1,5 @@
 ---
-title: 'Supplementary Material: Experiment S1'
+title: "Memory's reflection of learned information value increases across development: Pilot experiment analyses"
 author: "Kate Nussenbaum"
 date: "11/20/18"
 output:
@@ -51,7 +51,7 @@ library(sjmisc)
 library(lmSupport)
 
 #Set path to data
-dataFolder <- "supplement_data/"
+dataFolder <- "pilot_data/"
 
 ```
 
