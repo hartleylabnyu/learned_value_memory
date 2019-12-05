@@ -32,7 +32,7 @@ h3 { /* Header 3 */
 
 ```{r setup, include = F}
 knitr:: opts_chunk$set(cache = TRUE, echo = FALSE, warning = FALSE, message = FALSE)
-knitr::opts_chunk$set(out.width='600px', out.height = '300px', dpi=1000, fig.align='center')
+knitr::opts_chunk$set(out.width='600px', out.height = '300px', dpi=600, fig.align='center')
 ```
 
 ```{r libraries and paths}
@@ -50,10 +50,11 @@ library(sjPlot)
 library(optimx)
 library(kableExtra)
 library(jtools)
+library(brms)
 
 #label data folders
-dataFolder <- "E2_anonymized_data/" #Experiment 2 data
-exp1DataFolder = "E1_anonymized_data/" #Experiment 1 data
+dataFolder <- "recoded_data/" #Experiment 2 data
+exp1DataFolder = "../../githubProject/E1_anonymized_data/" #Experiment 1 data
 
 ```
 
@@ -393,13 +394,12 @@ memData$freqCondFactor <- as.factor(memData$freqCond)
 ```{r explicit freq error maximal model}
 freqError.maximal <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *block + (freqCondFactor*block|sub) + (freqCondFactor|item), data = memData, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)))
 
-freqError.maximal
+nice(freqError.maximal)
 
 #return lmer results
-
 freqError.maximal.lmer <- mixed(memFreqRespErrorMagnitude ~ freqCondFactor *block + (freqCondFactor*block|sub) + (freqCondFactor|item), data = memData, method = "KR", control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod")
 
-summary(freqError.maximal.lmer)
+summ(freqError.maximal.lmer)
 ```
 
 ```{r explicit freq error stats}
@@ -457,10 +457,46 @@ memAcc.2 <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block||sub)
 nice(memAcc.2)
 
 #return glmer results
-
 memAcc.2.glmer <- mixed(memAcc ~  freqCondFactor * block + (freqCondFactor*block||sub) + (freqCondFactor*block||item), data = memData, family = "binomial", method = "LRT", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), expand_re = T, return = "merMod")
 
 summ(memAcc.2.glmer)
+```
+
+### Bayesian analysis of memory
+```{r memory accuracy BIC Bayes Factor, include = F}
+#Use BIC based Bayes Factors
+memAcc.full <- mixed(memAcc ~  freqCondFactor + block + (block||sub) + (block||item), data = memData, family = "binomial", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod", expand_re = T)
+
+memAcc.reduced <- mixed(memAcc ~  block + (block||sub) + (block||item), data = memData, family = "binomial", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod", expand_re = T)
+
+
+BF_BIC = exp((BIC(memAcc.full) - BIC(memAcc.reduced))/2)
+```
+
+#### Model comparison without frequency condition interaction
+```{r display memory accuracy BIC Bayes Factor}
+BF_BIC 
+```
+
+
+#### Model comparison with full model
+```{r memory accuracy BIC Bayes Factor full model, include = F}
+#Use BIC based Bayes Factors
+memAcc.full <- mixed(memAcc ~  freqCondFactor * block + (block*freqCondFactor||sub) + (block*freqCondFactor||item), data = memData, family = "binomial", control = glmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=1e6)), return = "merMod", expand_re = T)
+
+BF_BIC = exp((BIC(memAcc.full) - BIC(memAcc.reduced))/2)
+```
+
+```{r display memory accuracy BIC Bayes Factor 2}
+BF_BIC 
+```
+
+#### Full brms accuracy model
+```{r memory accuracy brms model}
+#BRMS model
+full_brms <- brm(memAcc ~  freqCondFactor * block + (freqCondFactor*block|sub) + (freqCondFactor*block|item), data = memData,  family = "bernoulli", iter = 1e5,  save_all_pars = T)
+
+summary(full_brms)
 ```
 
 ### Plot: Effects of frequency condition and block on memory
@@ -1167,6 +1203,7 @@ errorBars <- aes(ymax = meanAcc + seAcc, ymin = meanAcc - seAcc)
 memAccPlotSub <- ggplot(memPlotData, aes(x = block, y = meanAcc, fill = freqCondFactor)) +
   facet_wrap(~ Experiment) +
   geom_boxplot(position = position_dodge(.8), alpha = .8) +
+  geom_hline(yintercept = .05, linetype = "dashed") +
   scale_fill_manual(values = c(color1, color3), name = "Frequency Condition") +
   stat_summary(fun.y = mean, geom = "point",
                shape = 4, size = 2.5, color = "white", position = position_dodge(.8)) +
@@ -1177,7 +1214,7 @@ memAccPlotSub <- ggplot(memPlotData, aes(x = block, y = meanAcc, fill = freqCond
   kate.theme
 memAccPlotSub
 
-#ggsave("memAccBothExps.png", width = 8, height = 4, units = "in", dpi = 1000)
+ggsave("memAccBothExps.png", width = 8, height = 4, units = "in", dpi = 1000)
 ```
 
 
