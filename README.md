@@ -4,6 +4,6 @@ Task code, data, and analysis code for: Nussenbaum, K., Prentis, E., & Hartley, 
 
 [Paper.](http://www.katenuss.com/papers/Nussenbaum_2020_Journal_of_Experimental_Psychology_General.pdf)
 
-[OSF Project Page](https://osf.io/h9ncs/)
+[OSF Project Page.](https://osf.io/h9ncs/)
 
 For questions, email katenuss@nyu.edu.
